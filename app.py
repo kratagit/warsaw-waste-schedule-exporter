@@ -7,7 +7,10 @@ import glob
 import threading
 import math
 import fitz  # PyMuPDF
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory
+
+# Harmonogram gminy Stare Juchy (Jeziorowskie) - modul niezalezny od czesci warszawskiej
+import jeziorowskie
 
 # Selenium
 from selenium import webdriver
@@ -485,6 +488,62 @@ def toggle_auto():
 
 @app.route('/api/last-state', methods=['GET'])
 def last_state(): return jsonify(load_state())
+
+# --- JEZIOROWSKIE (gmina Stare Juchy) ---
+# Osobne trasy i osobny kalendarz - nie dotykaja logiki warszawskiej.
+
+@app.route('/api/jeziorowskie/sectors', methods=['GET'])
+def jez_sectors():
+    return jsonify({
+        "sectors": jeziorowskie.lista_sektorow(),
+        "fractions": jeziorowskie.FRAKCJE,
+        "calendar": jeziorowskie.CALENDAR_NAME,
+    })
+
+@app.route('/api/jeziorowskie/schedule/<int:numer>', methods=['GET'])
+def jez_schedule(numer):
+    tylko_przyszle = request.args.get('upcoming', '0') in ('1', 'true', 'True')
+    dane = jeziorowskie.harmonogram(numer, tylko_przyszle=tylko_przyszle)
+    if not dane:
+        return jsonify({"status": "error", "message": f"Brak danych dla sektora {numer}"}), 404
+    return jsonify(dane)
+
+@app.route('/api/jeziorowskie/sync', methods=['POST'])
+def jez_sync():
+    service_google = get_google_service()
+    if not service_google:
+        return jsonify({"status": "error", "message": "Brak logowania"})
+    if jeziorowskie.czy_trwa():
+        return jsonify({"status": "error", "message": "Proces trwa"})
+
+    body = request.json or {}
+    numer = body.get('sector')
+    dozwolone = body.get('allowedTypes') or [f["id"] for f in jeziorowskie.FRAKCJE]
+    tylko_przyszle = body.get('onlyUpcoming', True)
+    if numer is None:
+        return jsonify({"status": "error", "message": "Nie wybrano sektora"})
+
+    jeziorowskie.uruchom_synchronizacje(service_google, int(numer), dozwolone, tylko_przyszle)
+    return jsonify({"status": "started"})
+
+@app.route('/api/jeziorowskie/progress', methods=['GET'])
+def jez_progress():
+    return jsonify(jeziorowskie.stan_postepu())
+
+@app.route('/api/jeziorowskie/pdf/<int:numer>', methods=['GET'])
+def jez_pdf(numer):
+    sciezka = jeziorowskie.sciezka_pdf(numer)
+    if not sciezka:
+        return jsonify({"status": "error", "message": "Brak pliku PDF"}), 404
+    return send_from_directory(os.path.dirname(sciezka), os.path.basename(sciezka))
+
+@app.route('/api/jeziorowskie/reparse', methods=['POST'])
+def jez_reparse():
+    """Ponownie czyta lokalne PDF-y i odswieza dane (bez internetu)."""
+    try:
+        return jsonify(jeziorowskie.przetworz_pdfy())
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
     # ssl_context='adhoc' generuje szybki certyfikat w locie

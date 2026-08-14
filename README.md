@@ -12,6 +12,58 @@ Aplikacja jest przystosowana do działania na domowym serwerze (np. Proxmox) w k
 *   **Automat:** Działa w tle i codziennie rano sprawdza, czy wczoraj był odbiór – jeśli tak, pobiera nowy harmonogram (dla aktualizacji danych na przyszłość).
 *   **Nowoczesne UI:** Tryb ciemny (Dark Mode), pasek postępu w czasie rzeczywistym, animacje kafelków.
 *   **Docker:** Łatwe wdrożenie i izolacja środowiska (Selenium + Chrome w kontenerze).
+*   **Przełącznik regionu:** Warszawa (19115) albo Jeziorowskie / gmina Stare Juchy (KOMA) – patrz niżej.
+
+---
+
+## 🌲 Jeziorowskie (gmina Stare Juchy)
+
+Drugi region, przełączany przyciskiem w nagłówku. Firma KOMA publikuje harmonogram
+jako **PDF, w którym tabela jest obrazkiem** – nie ma tam warstwy tekstowej z datami.
+Dlatego terminy odczytuje moduł `koma_parser.py`, w całości lokalnie i deterministycznie:
+**bez OCR, bez AI i bez usług zewnętrznych**.
+
+Jak to działa:
+
+1.  Z PDF-a wyciągany jest wbudowany obrazek.
+2.  Kolumny tabeli znajdowane są po kolorach nagłówków (czarny = Zmieszane, brązowy = Bio,
+    żółty = Metale i tworzywa, niebieski = Papier, zielony = Szkło, szare = Gabaryty i Popiół),
+    a wiersze po białych separatorach w kolumnie miesięcy.
+3.  W komórkach wyszukiwane są spójne plamy atramentu; przecinki dzielą je na liczby.
+4.  Cyfry rozpoznawane są przez porównanie z wzorcami **renderowanymi z czcionki systemowej**
+    (Arial Bold) – piksel w piksel.
+5.  Odczyt jest sprawdzany: rosnące dni w komórce, zgodność nazwy miesiąca z pozycją wiersza,
+    stały dzień tygodnia dla frakcji i sensowne odstępy. Zastrzeżenia trafiają do pola
+    `ostrzezenia` i są pokazywane w panelu.
+
+Odczyt zweryfikowano ręcznie, komórka po komórce, dla sektorów I, II i III na rok 2026 –
+**252 komórki, zero rozbieżności**.
+
+Panel pozwala wybrać sektor, obejrzeć najbliższe odbiory i cały rok w tabeli, otworzyć
+źródłowy PDF, ponownie odczytać PDF-y (przycisk *Odczytaj PDF*) oraz wysłać terminy do
+Google Calendar. Terminy Jeziorowskich trafiają do **osobnego kalendarza**
+„Wywóz Śmieci (Jeziorowskie)”, więc nie mieszają się z warszawskimi.
+
+### Dane (lokalne, poza repozytorium)
+
+Katalog `data/` jest w `.gitignore` – harmonogramy **nie trafiają do repozytorium**.
+Trzeba je mieć lokalnie:
+
+```text
+data/jeziorowskie/
+├── sektor-1.json          # odczytany harmonogram
+├── sektor-2.json
+├── sektor-3.json
+└── pdf/
+    └── Harmonogram sektor N.pdf    # pliki źródłowe z KOMA
+```
+
+Wystarczy wrzucić PDF-y do `data/jeziorowskie/pdf/` i kliknąć **Odczytaj PDF** w panelu
+(albo wywołać `POST /api/jeziorowskie/reparse`) – pliki `sektor-*.json` wygenerują się same.
+Nazwa pliku musi zawierać numer sektora, np. `Harmonogram sektor 2.pdf`.
+
+Gdy katalogu nie ma, panel po prostu zgłasza brak danych – reszta aplikacji działa normalnie.
+Pobieranie harmonogramów wprost ze strony KOMA nie jest jeszcze zrobione.
 
 ---
 
