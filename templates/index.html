@@ -151,13 +151,21 @@
                 </div>
 
                 <!-- SIATKA PRZYCISKÓW -->
-                <div class="grid grid-cols-3 gap-4 relative z-10">
-                    <!-- DYNAMICZNY PRZYCISK (LOGIN / SYNC) -->
-                    <button id="runBtn" onclick="handleMainButton()" 
-                            class="col-span-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10">
+                    <!-- POBRANIE DANYCH ZE STRONY 19115 (bez wysyłki do kalendarza) -->
+                    <button id="runBtn" onclick="handleMainButton()"
+                            class="col-span-2 md:col-span-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
                         <i class="fas fa-circle-notch fa-spin hidden" id="btnSpinner"></i>
                         <span id="btnIcon"><i class="fas fa-sync-alt text-lg group-hover:rotate-180 transition-transform duration-700"></i></span>
                         <span id="btnText">ŁADOWANIE...</span>
+                    </button>
+
+                    <!-- WYSYŁKA POBRANYCH TERMINÓW DO KALENDARZA GOOGLE -->
+                    <button id="calBtn" onclick="handleCalendarButton()"
+                            class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 py-3 rounded-lg transition-all flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
+                        <i class="fas fa-circle-notch fa-spin hidden" id="calBtnSpinner"></i>
+                        <i id="calBtnIcon" class="fas fa-calendar-plus text-emerald-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
+                        <span id="calBtnText">Do kalendarza</span>
                     </button>
 
                     <button id="pdfBtn" onclick="openPdf(false)" disabled
@@ -458,36 +466,88 @@
             const data = await res.json();
             isAuthenticated = data.authenticated;
             updateMainButton();
+            updateCalendarButton();
             updateJezButton();
             validateRunButton();
         } catch(e) { console.error("Auth check failed", e); }
     }
 
+    // Duzy przycisk pobiera harmonogram ze strony 19115 do aplikacji.
+    // Logowanie do Google dotyczy juz tylko wysylki, wiec siedzi przy przycisku
+    // "Do kalendarza" ponizej.
     function updateMainButton() {
         const btn = document.getElementById('runBtn');
         const iconSpan = document.getElementById('btnIcon');
         const textSpan = document.getElementById('btnText');
-        
-        // Reset classes
-        btn.className = "col-span-3 font-bold py-4 px-6 rounded-lg shadow-lg transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group";
-        
+        if (!btn || !iconSpan || !textSpan) return;
+
+        btn.className = "col-span-2 md:col-span-4 font-bold py-4 px-6 rounded-lg shadow-lg transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group";
+        btn.classList.add('bg-gradient-to-r', 'from-emerald-600', 'to-teal-600', 'hover:from-emerald-500', 'hover:to-teal-500', 'text-white', 'shadow-emerald-500/20');
+        iconSpan.innerHTML = '<i class="fas fa-sync-alt text-lg group-hover:rotate-180 transition-transform duration-700"></i>';
+        textSpan.textContent = 'Synchronizuj';
+    }
+
+    function updateCalendarButton() {
+        const btn = document.getElementById('calBtn');
+        const ikona = document.getElementById('calBtnIcon');
+        const tekst = document.getElementById('calBtnText');
+        if (!btn || !ikona || !tekst) return;
+
         if (isAuthenticated) {
-            btn.classList.add('bg-gradient-to-r', 'from-emerald-600', 'to-teal-600', 'hover:from-emerald-500', 'hover:to-teal-500', 'text-white', 'shadow-emerald-500/20');
-            iconSpan.innerHTML = '<i class="fas fa-sync-alt text-lg group-hover:rotate-180 transition-transform duration-700"></i>';
-            textSpan.textContent = 'Synchronizuj Teraz';
+            ikona.className = 'fas fa-calendar-plus text-emerald-500 text-lg group-hover:scale-110 transition-transform duration-300';
+            tekst.textContent = 'Do kalendarza';
         } else {
-            btn.classList.add('bg-blue-600', 'hover:bg-blue-700', 'text-white', 'shadow-blue-500/30');
-            iconSpan.innerHTML = '<i class="fab fa-google text-lg"></i>';
-            textSpan.textContent = 'Połącz z Google Calendar';
+            ikona.className = 'fab fa-google text-blue-500 text-lg group-hover:scale-110 transition-transform duration-300';
+            tekst.textContent = 'Połącz z Google';
         }
     }
 
     function handleMainButton() {
-        if (isAuthenticated) {
-            runScraping();
-        } else {
-            window.location.href = '/login';
+        runScraping();
+    }
+
+    function handleCalendarButton() {
+        if (!isAuthenticated) { window.location.href = '/login'; return; }
+        runCalendarSync();
+    }
+
+    async function runCalendarSync() {
+        const btn = document.getElementById('calBtn');
+        const spinner = document.getElementById('calBtnSpinner');
+        const ikona = document.getElementById('calBtnIcon');
+        const alertEl = document.getElementById('errorAlert');
+
+        btn.disabled = true;
+        btn.classList.add('opacity-75', 'cursor-not-allowed');
+        spinner.classList.remove('hidden');
+        ikona.classList.add('hidden');
+        alertEl.classList.add('hidden');
+
+        const allowedTypes = Object.keys(syncPreferences).filter(key => syncPreferences[key]);
+
+        try {
+            const res = await fetch('/api/calendar-sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ allowedTypes: allowedTypes })
+            });
+            const data = await res.json();
+            if (data.status === 'started') startPolling();
+            else throw new Error(data.message || 'Błąd uruchamiania');
+        } catch (e) {
+            resetCalBtn();
+            document.getElementById('errorMessage').innerText = e.message;
+            alertEl.classList.remove('hidden');
         }
+    }
+
+    function resetCalBtn() {
+        const btn = document.getElementById('calBtn');
+        if (!btn) return;
+        btn.disabled = false;
+        btn.classList.remove('opacity-75', 'cursor-not-allowed');
+        document.getElementById('calBtnSpinner').classList.add('hidden');
+        document.getElementById('calBtnIcon').classList.remove('hidden');
     }
 
     // --- LOGIKA APLIKACJI ---
@@ -516,7 +576,8 @@
             const res = await fetch('/api/sync', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ address: address, allowedTypes: allowedTypes })
+                // sendToCalendar: false -> samo pobranie danych do aplikacji
+                body: JSON.stringify({ address: address, allowedTypes: allowedTypes, sendToCalendar: false })
             });
             const data = await res.json();
             
@@ -565,6 +626,7 @@
                 if (state.status === 'finished' || state.status === 'error') {
                     clearInterval(pollingInterval);
                     resetBtn();
+                    resetCalBtn();
                     await loadLastState();
 
                     if (state.status === 'error') {

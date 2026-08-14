@@ -205,7 +205,114 @@ def save_state(state):
 
 # --- PROCES SYNCHRONIZACJI ---
 
-def run_full_process(address, allowed_types):
+def send_schedule_to_calendar(service_google, schedule_data, allowed_types, log,
+                              progress_start=75, progress_end=95):
+    """Wysyla terminy do kalendarza Google i zwraca liczbe dodanych wydarzen.
+
+    Wydzielone z run_full_process, zeby ta sama logika obslugiwala dwa przypadki:
+    pobranie danych razem z wysylka oraz sama wysylke wczesniej pobranych danych.
+    """
+    update_progress(progress_start, "Wysyłanie do Kalendarza...")
+    cal_id = None
+    page_token = None
+    while True:
+        clist = service_google.calendarList().list(pageToken=page_token).execute()
+        for e in clist['items']:
+            if e['summary'] == CALENDAR_NAME: cal_id = e['id']; break
+        if cal_id: break
+        page_token = clist.get('nextPageToken')
+        if not page_token: break
+
+    if not cal_id:
+        cal_id = service_google.calendars().insert(body={'summary': CALENDAR_NAME, 'timeZone': 'Europe/Warsaw'}).execute()['id']
+        log("Utworzono nowy kalendarz.")
+
+    now_iso = datetime.datetime.utcnow().isoformat() + 'Z'
+    existing = service_google.events().list(calendarId=cal_id, timeMin=now_iso, singleEvents=True).execute().get('items', [])
+
+    count = 0
+    rozpietosc = max(1, progress_end - progress_start)
+    for i, (date_text, waste_type) in enumerate(schedule_data):
+        update_progress(progress_start + int((i/len(schedule_data))*rozpietosc), f"Wysyłanie: {waste_type}...")
+        if waste_type not in allowed_types:
+            log(f" -> Pominięto (filtr): {waste_type}")
+            continue
+        edate = parse_polish_date(date_text)
+        if not edate: continue
+        estr = edate.isoformat()
+        summary = f"Odbiór: {waste_type}"
+
+        dup = False
+        for ev in existing:
+            if ev.get('start', {}).get('date') == estr and ev.get('summary') == summary: dup = True; break
+
+        if not dup:
+            body = {
+                'summary': summary, 'start': {'date': estr}, 'end': {'date': estr},
+                'colorId': WASTE_COLORS.get(waste_type, "8"), 'transparency': 'transparent',
+                'reminders': {'useDefault': False, 'overrides': [
+                    {'method': 'popup', 'minutes': 300},
+                    {'method': 'email', 'minutes': 300}
+                ]}
+            }
+            service_google.events().insert(calendarId=cal_id, body=body).execute()
+            log(f" -> DODANO: {waste_type} ({estr})")
+            count += 1
+        else:
+            log(f" -> Duplikat: {waste_type}")
+    return count
+
+
+def push_state_to_calendar(allowed_types):
+    """Wysyla do kalendarza harmonogram juz pobrany do aplikacji (bez scrapingu)."""
+    state = load_state()
+    results = dict(state)
+    results["logs"] = []
+    results["status"] = "success"
+    results.pop("message", None)
+
+    def log(msg):
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        print(f"[{ts}] {msg}")
+        results["logs"].append(f"[{ts}] {msg}")
+
+    try:
+        service_google = get_google_service()
+        if not service_google:
+            raise Exception("Brak autoryzacji Google. Kliknij 'Połącz z Google' w panelu.")
+
+        schedule_data = [(item["dateText"], item["wasteType"]) for item in state.get("schedule", [])]
+        if not schedule_data:
+            raise Exception("Brak pobranych danych. Najpierw kliknij 'Synchronizuj'.")
+
+        update_progress(10, "Łączenie z Kalendarzem Google...")
+        log(f"--- WYSYŁKA DO KALENDARZA: {len(schedule_data)} terminów ---")
+        count = send_schedule_to_calendar(service_google, schedule_data, allowed_types, log,
+                                          progress_start=20, progress_end=95)
+
+        results["added_events"] = count
+        results["allowed_types"] = allowed_types
+        results['timestamp'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log(f"--- SUKCES: Dodano {count} wydarzeń ---")
+        save_state(results)
+
+        with progress_lock:
+            progress_state["percent"] = 100
+            progress_state["message"] = "Zakończono pomyślnie!"
+            progress_state["status"] = "finished"
+            progress_state["result"] = results
+    except Exception as e:
+        log(f"BŁĄD: {str(e)}")
+        with progress_lock:
+            progress_state["status"] = "error"
+            progress_state["message"] = str(e)
+            results["status"] = "error"
+            results["message"] = str(e)
+            progress_state["result"] = results
+        save_state(results)
+
+
+def run_full_process(address, allowed_types, send_to_calendar=True):
     current_state = load_state()
     results = {
         "status": "success", "logs": [], "added_events": 0, "schedule": [],
@@ -221,10 +328,13 @@ def run_full_process(address, allowed_types):
         results["logs"].append(f"[{ts}] {msg}")
 
     try:
-        # Sprawdzamy auth na początku
-        service_google = get_google_service()
-        if not service_google:
-             raise Exception("Brak autoryzacji Google. Kliknij 'Połącz z Google' w panelu.")
+        # Autoryzacja Google jest potrzebna tylko wtedy, gdy od razu wysylamy
+        # terminy do kalendarza. Samo pobranie danych ze strony dziala bez logowania.
+        service_google = None
+        if send_to_calendar:
+            service_google = get_google_service()
+            if not service_google:
+                 raise Exception("Brak autoryzacji Google. Kliknij 'Połącz z Google' w panelu.")
 
         update_progress(5, "Start przeglądarki...")
         log(f"--- START DLA: {address} ---")
@@ -334,58 +444,16 @@ def run_full_process(address, allowed_types):
         if not schedule_data: raise Exception("Brak dat na stronie")
 
         # Calendar
-        update_progress(75, "Wysyłanie do Kalendarza...")
-        cal_id = None
-        page_token = None
-        while True:
-            clist = service_google.calendarList().list(pageToken=page_token).execute()
-            for e in clist['items']:
-                if e['summary'] == CALENDAR_NAME: cal_id = e['id']; break
-            if cal_id: break
-            page_token = clist.get('nextPageToken')
-            if not page_token: break
-        
-        if not cal_id:
-            cal_id = service_google.calendars().insert(body={'summary': CALENDAR_NAME, 'timeZone': 'Europe/Warsaw'}).execute()['id']
-            log("Utworzono nowy kalendarz.")
+        if send_to_calendar:
+            count = send_schedule_to_calendar(service_google, schedule_data, allowed_types, log)
+            results["added_events"] = count
+            log(f"--- SUKCES: Dodano {count} wydarzeń ---")
+        else:
+            update_progress(90, "Zapisywanie danych...")
+            log(f"--- SUKCES: Pobrano {len(schedule_data)} terminów (bez wysyłki do kalendarza) ---")
 
-        now_iso = datetime.datetime.utcnow().isoformat() + 'Z'
-        existing = service_google.events().list(calendarId=cal_id, timeMin=now_iso, singleEvents=True).execute().get('items', [])
-
-        count = 0
-        for i, (date_text, waste_type) in enumerate(schedule_data):
-            update_progress(80 + int((i/len(schedule_data))*15), f"Wysyłanie: {waste_type}...")
-            if waste_type not in allowed_types: 
-                log(f" -> Pominięto (filtr): {waste_type}")
-                continue
-            edate = parse_polish_date(date_text)
-            if not edate: continue
-            estr = edate.isoformat()
-            summary = f"Odbiór: {waste_type}"
-            
-            dup = False
-            for ev in existing:
-                if ev.get('start', {}).get('date') == estr and ev.get('summary') == summary: dup = True; break
-            
-            if not dup:
-                body = {
-                    'summary': summary, 'start': {'date': estr}, 'end': {'date': estr},
-                    'colorId': WASTE_COLORS.get(waste_type, "8"), 'transparency': 'transparent',
-                    'reminders': {'useDefault': False, 'overrides': [
-                        {'method': 'popup', 'minutes': 300},
-                        {'method': 'email', 'minutes': 300}
-                    ]}
-                }
-                service_google.events().insert(calendarId=cal_id, body=body).execute()
-                log(f" -> DODANO: {waste_type} ({estr})")
-                count += 1
-            else:
-                log(f" -> Duplikat: {waste_type}")
-
-        results["added_events"] = count
         results['timestamp'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log(f"--- SUKCES: Dodano {count} wydarzeń ---")
-        
+
         save_state(results)
         
         with progress_lock:
@@ -467,10 +535,26 @@ def auth_status():
 
 @app.route('/api/sync', methods=['POST'])
 def api_sync():
-    if not get_google_creds(): return jsonify({"status": "error", "message": "Brak logowania"})
+    # sendToCalendar=False -> samo pobranie harmonogramu ze strony, bez Google
+    send_to_calendar = (request.json or {}).get('sendToCalendar', True)
+    if send_to_calendar and not get_google_creds():
+        return jsonify({"status": "error", "message": "Brak logowania"})
     if progress_state["status"] == "running": return jsonify({"status": "error", "message": "Proces trwa"})
     reset_progress()
-    threading.Thread(target=run_full_process, args=(request.json.get('address'), request.json.get('allowedTypes'))).start()
+    threading.Thread(target=run_full_process, args=(request.json.get('address'), request.json.get('allowedTypes'), send_to_calendar)).start()
+    return jsonify({"status": "started"})
+
+@app.route('/api/calendar-sync', methods=['POST'])
+def api_calendar_sync():
+    """Wysyla do kalendarza harmonogram juz pobrany do aplikacji."""
+    if not get_google_creds(): return jsonify({"status": "error", "message": "Brak logowania"})
+    if progress_state["status"] == "running": return jsonify({"status": "error", "message": "Proces trwa"})
+    state = load_state()
+    if not state.get("schedule"):
+        return jsonify({"status": "error", "message": "Brak pobranych danych. Najpierw kliknij 'Synchronizuj'."})
+    reset_progress()
+    allowed = (request.json or {}).get('allowedTypes') or list(WASTE_COLORS.keys())
+    threading.Thread(target=push_state_to_calendar, args=(allowed,)).start()
     return jsonify({"status": "started"})
 
 @app.route('/api/progress', methods=['GET'])
