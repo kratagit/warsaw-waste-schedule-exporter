@@ -206,18 +206,6 @@
             <!-- LEWA KOLUMNA -->
             <div class="lg:col-span-4 flex flex-col gap-6 fade-in">
 
-                <!-- Wybór sektora -->
-                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 flex-shrink-0 card-hover">
-                    <div class="flex items-center mb-4">
-                        <i class="fas fa-map-signs text-emerald-500 mr-3 text-lg"></i>
-                        <h2 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Sektor</h2>
-                    </div>
-                    <div id="jezSectorList" class="space-y-2">
-                        <p class="text-xs text-gray-400">Ładowanie...</p>
-                    </div>
-                    <div id="jezSectorInfo" class="mt-4 pt-4 border-t border-gray-100 dark:border-slate-700 text-xs text-gray-500 dark:text-gray-400 leading-relaxed hidden"></div>
-                </div>
-
                 <!-- Zakres dat -->
                 <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 flex justify-between items-center flex-shrink-0 card-hover">
                     <div>
@@ -263,6 +251,7 @@
                                 </a>
                             </div>
                             <p class="text-sm text-gray-500 dark:text-gray-400">Dane z PDF: <span id="jezSourceInfo" class="font-mono text-emerald-500 font-bold">-</span></p>
+                            <p id="jezSectorInfo" class="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-2xl leading-relaxed"></p>
                         </div>
                         <div class="text-right flex items-center gap-4 sm:block">
                             <p class="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wide">Terminów w roku</p>
@@ -843,7 +832,9 @@
     //  Nic tutaj nie dotyka logiki warszawskiej.
     // =====================================================================
 
-    let jezSectors = [];
+    // Panel pokazuje na stałe ten sektor (API obsługuje też pozostałe).
+    const JEZ_SEKTOR = 2;
+
     let jezFractions = [];
     let jezCurrent = null;      // dane wybranego sektora
     let jezPrefs = {};          // ktore frakcje synchronizowac
@@ -882,23 +873,23 @@
         try {
             const res = await fetch('/api/jeziorowskie/sectors');
             const data = await res.json();
-            jezSectors = data.sectors || [];
             jezFractions = data.fractions || [];
             jezCalendarName = data.calendar || '';
 
             initJezPrefs();
             renderJezFilters();
-            renderJezSectors();
-
-            const zapisany = parseInt(localStorage.getItem('jezSector') || '0');
-            const wybrany = jezSectors.find(s => s.numer === zapisany) || jezSectors[0];
-            if (wybrany) selectJezSector(wybrany.numer);
+            await loadJezSchedule();
             checkJezRunning();
         } catch (e) {
             console.error('Jeziorowskie init', e);
-            document.getElementById('jezSectorList').innerHTML =
-                '<p class="text-xs text-red-500">Nie udało się wczytać danych sektorów.</p>';
+            pokazJezBlad('Nie udało się wczytać danych harmonogramu.');
         }
+    }
+
+    function pokazJezBlad(tekst) {
+        const box = document.getElementById('jezErrorAlert');
+        box.classList.remove('hidden');
+        document.getElementById('jezErrorMessage').textContent = tekst;
     }
 
     function initJezPrefs() {
@@ -937,56 +928,22 @@
         }
     }
 
-    function renderJezSectors() {
-        const c = document.getElementById('jezSectorList');
-        c.innerHTML = '';
-        if (!jezSectors.length) {
-            c.innerHTML = '<p class="text-xs text-gray-400">Brak danych sektorów.</p>';
-            return;
-        }
-        jezSectors.forEach(s => {
-            const btn = document.createElement('button');
-            btn.id = `jezSectorBtn-${s.numer}`;
-            btn.onclick = () => selectJezSector(s.numer);
-            btn.className = jezSectorBtnClass(false);
-            btn.innerHTML = `
-                <span class="font-bold">${s.sektor}</span>
-                <span class="text-[10px] opacity-70">${s.rok || ''} · ${s.liczba_odbiorow} terminów</span>
-            `;
-            c.appendChild(btn);
-        });
-    }
-
-    function jezSectorBtnClass(aktywny) {
-        return "w-full flex justify-between items-center px-4 py-3 rounded-lg text-xs transition-all border " + (aktywny
-            ? "bg-emerald-600 text-white border-emerald-600 shadow"
-            : "bg-gray-50 dark:bg-slate-900 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-slate-700 hover:border-emerald-400");
-    }
-
-    async function selectJezSector(numer) {
-        localStorage.setItem('jezSector', numer);
-        jezSectors.forEach(s => {
-            const b = document.getElementById(`jezSectorBtn-${s.numer}`);
-            if (b) b.className = jezSectorBtnClass(s.numer === numer);
-        });
+    async function loadJezSchedule() {
         try {
-            const res = await fetch(`/api/jeziorowskie/schedule/${numer}`);
+            const res = await fetch(`/api/jeziorowskie/schedule/${JEZ_SEKTOR}`);
             if (!res.ok) throw new Error('brak danych');
             jezCurrent = await res.json();
             renderJezSector(jezCurrent);
         } catch (e) {
-            document.getElementById('jezSectorInfo').classList.remove('hidden');
-            document.getElementById('jezSectorInfo').textContent = 'Nie udało się wczytać harmonogramu sektora.';
+            pokazJezBlad(`Nie udało się wczytać harmonogramu (sektor ${JEZ_SEKTOR}). `
+                + 'Sprawdź, czy w data/jeziorowskie są pliki sektor-*.json.');
         }
     }
 
     function renderJezSector(d) {
         document.getElementById('jezTitle').textContent = `${d.sektor} · ${d.rok}`;
         document.getElementById('jezSourceInfo').textContent = d.zrodlo_pdf || '-';
-
-        const info = document.getElementById('jezSectorInfo');
-        info.classList.remove('hidden');
-        info.innerHTML = `<span class="font-bold text-gray-600 dark:text-gray-300">Wykaz:</span> ${d.wykaz || '-'}`;
+        document.getElementById('jezSectorInfo').textContent = d.wykaz || '';
 
         const warn = document.getElementById('jezWarnAlert');
         if (d.ostrzezenia && d.ostrzezenia.length) {
