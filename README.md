@@ -140,8 +140,17 @@ mkdir -p data
 # skopiuj credentials.json do waste_app/data/
 ```
 
-Cały stan aplikacji – klucze, token logowania, ostatni harmonogram i pliki
-Jeziorowskich – leży w `data/`, dzięki czemu przeżywa aktualizacje obrazu.
+W `data/` leżą dwie różne rzeczy:
+
+*   **Nie do odtworzenia:** `credentials.json` i `token.pickle`. Ich utrata oznacza
+    ponowne logowanie do Google – to je warto backupować.
+*   **Odświeżalne:** harmonogram Jeziorowskich (`data/jeziorowskie/`) i `last_state.json`.
+    Harmonogram jest wydawany na jeden rok, więc i tak trzeba go co roku pobrać na nowo
+    przyciskiem **Synchronizuj**; skasowanie tych plików niczego trwale nie niszczy.
+
+Panel sam przypomina o odświeżeniu: gdy wczytane dane są ze starszego rocznika albo nie
+ma już żadnego terminu przed nami, nad przyciskami pojawia się ostrzeżenie
+„Harmonogram wymaga odświeżenia”.
 
 ### 3. Uruchomienie kontenera
 

@@ -15,7 +15,12 @@ services:
       - TOKEN_FILE=/app/data/token.pickle
       - STATE_FILE=/app/data/last_state.json
     volumes:
-      # dane trwałe: klucze Google, token, ostatni stan, harmonogramy Jeziorowskich
+      # ./data trzyma dwie rózne rzeczy:
+      #  * to, czego nie da się odtworzyć - credentials.json i token.pickle
+      #    (bez nich trzeba od nowa logować się do Google),
+      #  * dane odświeżalne - harmonogram Jeziorowskich (data/jeziorowskie) oraz
+      #    last_state.json. Harmonogram zmienia się co roku i pobiera się go
+      #    ponownie przyciskiem "Synchronizuj", więc jego utrata nie boli.
       - ./data:/app/data
-      # pobrane PDF-y warszawskie (Oryginał / Opisany)
+      # pobrane PDF-y warszawskie (Oryginał / Opisany) - też odtwarzalne
       - ./static:/app/static
