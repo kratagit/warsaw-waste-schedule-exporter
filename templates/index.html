@@ -388,6 +388,7 @@
   <script type="module">
     import autoAnimate from 'https://cdn.jsdelivr.net/npm/@formkit/auto-animate/index.mjs';
     autoAnimate(document.getElementById('scheduleContainer'), { duration: 300 });
+    autoAnimate(document.getElementById('jezUpcoming'), { duration: 300 });
   </script>
 
   <script>
@@ -1076,59 +1077,85 @@
             });
         });
 
-        const zTerminem = Object.values(najblizszy).sort((a, b) => a.data.localeCompare(b.data));
-        const bezTerminu = (d.frakcje || []).filter(f => !najblizszy[f.id]);
+        // frakcje bez terminu do konca roku ida na sam koniec
+        const pozycje = Object.values(najblizszy).concat(
+            (d.frakcje || []).filter(f => !najblizszy[f.id]).map(f => ({ ...f, data: null })));
 
-        if (!zTerminem.length && !bezTerminu.length) {
+        if (!pozycje.length) {
             c.innerHTML = '<p class="col-span-full text-sm text-gray-400 py-6 text-center">Brak danych harmonogramu.</p>';
             return;
         }
 
-        const kafelki = zTerminem.map(f => {
-            const dni = Math.round((new Date(f.data) - new Date(dzis)) / 86400000);
-            const kiedy = dni === 0 ? 'dziś' : (dni === 1 ? 'jutro' : `za ${dni} dni`);
-            const akt = dozwolone.includes(f.id);
-            const pilne = dni <= 1;
+        // tak jak w panelu Warszawy: zaznaczone frakcje na gorze, w obu grupach
+        // chronologicznie - dzieki temu odznaczenie przesuwa kafelek w dol
+        pozycje.sort((a, b) => {
+            const aktA = dozwolone.includes(a.id), aktB = dozwolone.includes(b.id);
+            if (aktA !== aktB) return aktA ? -1 : 1;
+            return (a.data || '9999').localeCompare(b.data || '9999');
+        });
 
-            const ramka = akt
+        // Elementy uaktualniamy w miejscu (po id), zamiast przebudowywac cały
+        // kontener - inaczej autoAnimate widzialoby usuniecie i dodanie wszystkiego
+        // od nowa i nie byloby czego animowac.
+        const istniejace = {};
+        Array.from(c.children).forEach(el => {
+            if (el.id) istniejace[el.id] = el;
+            else el.remove();   // np. komunikat zastępczy o braku danych
+        });
+
+        pozycje.forEach(f => {
+            const akt = dozwolone.includes(f.id);
+            const dni = f.data
+                ? Math.round((new Date(f.data) - new Date(dzis)) / 86400000) : null;
+            const pilne = dni !== null && dni <= 1;
+            const kiedy = dni === null ? ''
+                : (dni === 0 ? 'dziś' : (dni === 1 ? 'jutro' : `za ${dni} dni`));
+
+            const ramka = (akt && f.data)
                 ? `bg-white dark:bg-slate-700 border-l-4 ${pilne ? 'border-amber-500' : 'border-emerald-500'} shadow-sm`
                 : 'bg-gray-50 dark:bg-slate-800/50 border-l-4 border-gray-300 dark:border-slate-600 opacity-60 grayscale-[0.5]';
 
-            const znacznik = akt
-                ? `<span class="text-[10px] font-bold uppercase px-2 py-1 rounded whitespace-nowrap ${pilne
+            let znacznik = '';
+            if (!f.data) {
+                znacznik = '';
+            } else if (akt) {
+                znacznik = `<span class="text-[10px] font-bold uppercase px-2 py-1 rounded whitespace-nowrap ${pilne
                         ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                        : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'}">${kiedy}</span>`
-                : '<span class="text-[10px] font-bold uppercase px-2 py-1 rounded bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-gray-400">Pomiń</span>';
+                        : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'}">${kiedy}</span>`;
+            } else {
+                znacznik = '<span class="text-[10px] font-bold uppercase px-2 py-1 rounded bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-gray-400">Pomiń</span>';
+            }
 
-            return `
-                <div class="p-4 rounded-xl flex justify-between items-center gap-3 ${ramka} transition-all duration-300">
+            const opis = f.data
+                ? `${formatujDate(f.data)} · ${f.dzien}`
+                : 'brak terminu do końca roku';
+
+            const klasa = `p-4 rounded-xl flex justify-between items-center gap-3 ${ramka} transition-all duration-300`;
+            const tresc = `
                     <div class="flex items-center gap-4 min-w-0">
-                        <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-gray-100 dark:bg-slate-800 ${akt ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400'}">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-gray-100 dark:bg-slate-800 ${akt && f.data ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400'}">
                             <i class="${f.icon} text-base"></i>
                         </div>
                         <div class="min-w-0">
-                            <h4 class="font-bold text-sm text-gray-800 dark:text-gray-100 tracking-tight truncate">${f.nazwa}</h4>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5">${formatujDate(f.data)} · ${f.dzien}</p>
+                            <h4 class="font-bold text-sm ${akt && f.data ? 'text-gray-800 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'} tracking-tight truncate">${f.nazwa}</h4>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5">${opis}</p>
                         </div>
                     </div>
-                    ${znacznik}
-                </div>`;
+                    ${znacznik}`;
+
+            const id = `jez-card-${f.id}`;
+            let div = istniejace[id];
+            if (!div) {
+                div = document.createElement('div');
+                div.id = id;
+            }
+            if (div.className !== klasa) div.className = klasa;
+            if (div.innerHTML !== tresc) div.innerHTML = tresc;
+            c.appendChild(div);   // przeniesienie istniejacego elementu = animacja
+            delete istniejace[id];
         });
 
-        const puste = bezTerminu.map(f => `
-                <div class="p-4 rounded-xl flex justify-between items-center gap-3 bg-gray-50 dark:bg-slate-800/50 border-l-4 border-gray-300 dark:border-slate-600 opacity-60">
-                    <div class="flex items-center gap-4 min-w-0">
-                        <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-gray-100 dark:bg-slate-800 text-gray-400">
-                            <i class="${f.icon} text-base"></i>
-                        </div>
-                        <div class="min-w-0">
-                            <h4 class="font-bold text-sm text-gray-500 dark:text-gray-400 tracking-tight truncate">${f.nazwa}</h4>
-                            <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">brak terminu do końca roku</p>
-                        </div>
-                    </div>
-                </div>`);
-
-        c.innerHTML = kafelki.concat(puste).join('');
+        Object.values(istniejace).forEach(el => el.remove());
     }
 
     function renderJezYear(d) {
