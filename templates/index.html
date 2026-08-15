@@ -255,9 +255,11 @@
                         <div class="w-full sm:w-auto">
                             <div class="flex items-center gap-3 mb-1">
                                 <h3 id="jezTitle" class="text-xl font-bold text-gray-800 dark:text-white">Harmonogram KOMA</h3>
-                                <a href="https://koma.pl" target="_blank"
+                                <!-- adres ustawiany z /api/jeziorowskie/config - ta sama strona,
+                                     z ktorej pobierany jest PDF -->
+                                <a id="jezStronaLink" href="https://stare-juchy.pl/" target="_blank"
                                    class="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold uppercase tracking-wide hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition border border-emerald-100 dark:border-emerald-800/50">
-                                    <span>KOMA</span>
+                                    <span>Otwórz stare-juchy.pl</span>
                                     <i class="fas fa-external-link-alt text-[9px] group-hover:translate-x-0.5 transition-transform"></i>
                                 </a>
                             </div>
@@ -942,6 +944,12 @@
             const data = await res.json();
             jezFractions = data.fractions || [];
             jezCalendarName = data.calendar || '';
+
+            const link = document.getElementById('jezStronaLink');
+            if (link && data.strona) {
+                link.href = data.strona;
+                link.title = data.strona;
+            }
 
             initJezPrefs();
             renderJezFilters();
