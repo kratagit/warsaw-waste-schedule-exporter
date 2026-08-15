@@ -288,8 +288,7 @@
 
                     <!-- Przyciski (układ jak w panelu Warszawy) -->
                     <div class="grid grid-cols-3 gap-4 relative z-10">
-                        <!-- SYNCHRONIZACJA: docelowo pobierze PDF ze strony KOMA i od razu go odczyta.
-                             Na razie odczytuje pliki leżące w data/jeziorowskie/pdf. -->
+                        <!-- SYNCHRONIZACJA: pobiera PDF ze strony gminy i od razu go odczytuje -->
                         <button id="jezRunBtn" onclick="handleJezMainButton()"
                                 class="col-span-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
                             <i class="fas fa-circle-notch fa-spin hidden" id="jezBtnSpinner"></i>
@@ -898,9 +897,7 @@
     //  Nic tutaj nie dotyka logiki warszawskiej.
     // =====================================================================
 
-    // Panel pokazuje na stałe ten sektor (API obsługuje też pozostałe).
-    const JEZ_SEKTOR = 2;
-
+    // Program obsługuje wyłącznie sektor II - numer siedzi po stronie serwera.
     let jezFractions = [];
     let jezCurrent = null;      // dane wybranego sektora
     let jezPrefs = {};          // ktore frakcje synchronizowac
@@ -937,7 +934,7 @@
 
     async function initJeziorowskie() {
         try {
-            const res = await fetch('/api/jeziorowskie/sectors');
+            const res = await fetch('/api/jeziorowskie/config');
             const data = await res.json();
             jezFractions = data.fractions || [];
             jezCalendarName = data.calendar || '';
@@ -996,13 +993,13 @@
 
     async function loadJezSchedule() {
         try {
-            const res = await fetch(`/api/jeziorowskie/schedule/${JEZ_SEKTOR}`);
+            const res = await fetch('/api/jeziorowskie/schedule');
             if (!res.ok) throw new Error('brak danych');
             jezCurrent = await res.json();
             renderJezSector(jezCurrent);
         } catch (e) {
-            pokazJezBlad(`Nie udało się wczytać harmonogramu (sektor ${JEZ_SEKTOR}). `
-                + 'Sprawdź, czy w data/jeziorowskie są pliki sektor-*.json.');
+            pokazJezBlad('Nie udało się wczytać harmonogramu. '
+                + 'Kliknij Synchronizuj, aby pobrać go ze strony gminy.');
         }
     }
 
@@ -1178,11 +1175,7 @@
         document.getElementById('jezBtnIcon').classList.add('hidden');
 
         try {
-            const res = await fetch('/api/jeziorowskie/fetch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sector: JEZ_SEKTOR })
-            });
+            const res = await fetch('/api/jeziorowskie/fetch', { method: 'POST' });
             const d = await res.json();
             if (d.status !== 'started') throw new Error(d.message || 'Nie udało się uruchomić');
             startJezPolling(true);
@@ -1240,7 +1233,6 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    sector: jezCurrent.numer,
                     allowedTypes: dozwolone,
                     onlyUpcoming: document.getElementById('jezOnlyUpcoming').checked
                 })
@@ -1288,13 +1280,13 @@
                         document.getElementById('jezErrorMessage').textContent = st.message;
                     } else if (pobieranie) {
                         const r = st.result || {};
-                        const pobrane = r.pobrane || [];
                         await initJeziorowskie();
                         document.getElementById('jezOkAlert').classList.remove('hidden');
                         document.getElementById('jezOkMessage').innerHTML =
-                            `<b>Pobrano ze strony gminy.</b> ` +
-                            pobrane.map(p => `${p.sektor} (${p.rok}): ${p.liczba_odbiorow} terminów`).join(', ') +
-                            ((r.bledy || []).length ? ` · błędy: ${r.bledy.join('; ')}` : '');
+                            `<b>Pobrano ze strony gminy.</b> ${r.sektor || ''} ${r.rok || ''}: `
+                            + `${r.liczba_odbiorow || 0} terminów`
+                            + ((r.ostrzezenia || []).length
+                                ? ` · ostrzeżeń odczytu: ${r.ostrzezenia.length}` : '');
                         setTimeout(() => box.classList.add('hidden'), 5000);
                     } else {
                         const r = st.result || {};
@@ -1327,7 +1319,7 @@
 
     function openJezPdf() {
         if (!jezCurrent) return;
-        window.open(`/api/jeziorowskie/pdf/${jezCurrent.numer}?t=${Date.now()}`, '_blank');
+        window.open(`/api/jeziorowskie/pdf?t=${Date.now()}`, '_blank');
     }
 
     function viewJezLogs() {
