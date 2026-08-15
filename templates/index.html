@@ -38,14 +38,30 @@
             </div>
             <div>
                 <h1 class="text-2xl md:text-3xl font-bold tracking-tight">Harmonogram Wywozu</h1>
-                <p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Warszawa 19115 & Google Calendar</p>
+                <p id="headerSubtitle" class="text-xs text-gray-500 dark:text-gray-400 font-medium">Warszawa 19115 &amp; Google Calendar</p>
             </div>
         </div>
-        <button onclick="toggleDarkMode()" class="w-12 h-12 rounded-full bg-white dark:bg-slate-800 shadow-md hover:bg-gray-50 dark:hover:bg-slate-700 transition flex items-center justify-center">
-            <i class="fas fa-moon dark:hidden text-slate-600"></i>
-            <i class="fas fa-sun hidden dark:block text-yellow-400"></i>
-        </button>
+        <div class="flex items-center gap-3">
+            <!-- PRZEŁĄCZNIK REGIONU -->
+            <div class="flex items-center gap-1 p-1 bg-white dark:bg-slate-800 rounded-xl shadow-md border border-gray-200 dark:border-slate-700">
+                <button id="btnRegionWarszawa" onclick="switchRegion('warszawa')"
+                        class="px-3 md:px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-all flex items-center gap-2">
+                    <i class="fas fa-city"></i><span class="hidden sm:inline">Warszawa</span>
+                </button>
+                <button id="btnRegionJeziorowskie" onclick="switchRegion('jeziorowskie')"
+                        class="px-3 md:px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-all flex items-center gap-2">
+                    <i class="fas fa-tree"></i><span class="hidden sm:inline">Jeziorowskie</span>
+                </button>
+            </div>
+            <button onclick="toggleDarkMode()" class="w-12 h-12 rounded-full bg-white dark:bg-slate-800 shadow-md hover:bg-gray-50 dark:hover:bg-slate-700 transition flex items-center justify-center flex-shrink-0">
+                <i class="fas fa-moon dark:hidden text-slate-600"></i>
+                <i class="fas fa-sun hidden dark:block text-yellow-400"></i>
+            </button>
+        </div>
     </div>
+
+    <!-- WIDOK: WARSZAWA (bez zmian w działaniu) -->
+    <div id="viewWarszawa">
 
     <!-- MAIN GRID -->
     <div class="grid lg:grid-cols-12 gap-6 items-stretch">
@@ -135,13 +151,21 @@
                 </div>
 
                 <!-- SIATKA PRZYCISKÓW -->
-                <div class="grid grid-cols-3 gap-4 relative z-10">
-                    <!-- DYNAMICZNY PRZYCISK (LOGIN / SYNC) -->
-                    <button id="runBtn" onclick="handleMainButton()" 
-                            class="col-span-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10">
+                    <!-- POBRANIE DANYCH ZE STRONY 19115 (bez wysyłki do kalendarza) -->
+                    <button id="runBtn" onclick="handleMainButton()"
+                            class="col-span-2 md:col-span-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
                         <i class="fas fa-circle-notch fa-spin hidden" id="btnSpinner"></i>
                         <span id="btnIcon"><i class="fas fa-sync-alt text-lg group-hover:rotate-180 transition-transform duration-700"></i></span>
                         <span id="btnText">ŁADOWANIE...</span>
+                    </button>
+
+                    <!-- WYSYŁKA POBRANYCH TERMINÓW DO KALENDARZA GOOGLE -->
+                    <button id="calBtn" onclick="handleCalendarButton()"
+                            class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 py-3 rounded-lg transition-all flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
+                        <i class="fas fa-circle-notch fa-spin hidden" id="calBtnSpinner"></i>
+                        <i id="calBtnIcon" class="fas fa-calendar-plus text-emerald-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
+                        <span id="calBtnText">Do kalendarza</span>
                     </button>
 
                     <button id="pdfBtn" onclick="openPdf(false)" disabled
@@ -178,6 +202,143 @@
                 </div>
             </div>
 
+        </div>
+    </div>
+
+    </div><!-- /viewWarszawa -->
+
+    <!-- WIDOK: JEZIOROWSKIE (gmina Stare Juchy, dane z PDF-ów KOMA) -->
+    <div id="viewJeziorowskie" class="hidden">
+        <div class="grid lg:grid-cols-12 gap-6 items-stretch">
+
+            <!-- LEWA KOLUMNA -->
+            <div class="lg:col-span-4 flex flex-col gap-6 fade-in">
+
+                <!-- Zakres dat -->
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 flex justify-between items-center flex-shrink-0 card-hover">
+                    <div>
+                        <div class="flex items-center mb-1">
+                            <i class="fas fa-hourglass-half text-blue-500 mr-3 text-lg"></i>
+                            <h2 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Zakres</h2>
+                        </div>
+                        <div id="jezRangeText" class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wide mt-1 ml-8">Tylko nadchodzące</div>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="jezOnlyUpcoming" class="sr-only peer" checked onchange="toggleJezRange()">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                </div>
+
+                <!-- Filtry frakcji (bez flex-grow - karta ma byc wysoka na tyle,
+                     ile zajmuja frakcje, a nie na cala kolumne) -->
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden flex flex-col flex-shrink-0 card-hover">
+                    <div class="p-6 border-b border-gray-100 dark:border-slate-700">
+                        <div class="flex items-center">
+                            <i class="fas fa-sliders-h text-blue-500 mr-3 text-lg"></i>
+                            <h2 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Filtry</h2>
+                        </div>
+                    </div>
+                    <!-- bez justify-between: pozycje maja isc jedna pod druga od gory,
+                         inaczej rozjezdzaja sie na cala wysokosc kolumny -->
+                    <div id="jezFilters" class="p-6 flex flex-col gap-1"></div>
+                </div>
+            </div>
+
+            <!-- PRAWA KOLUMNA -->
+            <div class="lg:col-span-8 flex flex-col gap-6 fade-in">
+
+                <!-- PANEL STEROWANIA -->
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 flex-shrink-0 card-hover relative overflow-hidden">
+                    <div class="absolute top-0 right-0 -mt-10 -mr-10 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
+
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 pb-4 border-b border-gray-100 dark:border-slate-700 gap-4 relative z-10">
+                        <div class="w-full sm:w-auto">
+                            <div class="flex items-center gap-3 mb-1">
+                                <h3 id="jezTitle" class="text-xl font-bold text-gray-800 dark:text-white">Harmonogram KOMA</h3>
+                                <!-- adres ustawiany z /api/jeziorowskie/config - ta sama strona,
+                                     z ktorej pobierany jest PDF -->
+                                <a id="jezStronaLink" href="https://stare-juchy.pl/" target="_blank"
+                                   class="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold uppercase tracking-wide hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition border border-emerald-100 dark:border-emerald-800/50">
+                                    <span>Otwórz stare-juchy.pl</span>
+                                    <i class="fas fa-external-link-alt text-[9px] group-hover:translate-x-0.5 transition-transform"></i>
+                                </a>
+                            </div>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Dane z PDF: <span id="jezSourceInfo" class="font-mono text-emerald-500 font-bold">-</span></p>
+                            <p id="jezSectorInfo" class="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-2xl leading-relaxed"></p>
+                        </div>
+                        <div class="text-right flex items-center gap-4 sm:block">
+                            <p class="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wide">Terminów w roku</p>
+                            <p id="jezCount" class="text-3xl font-bold text-emerald-500 tracking-tight">0</p>
+                        </div>
+                    </div>
+
+                    <!-- Pasek postępu -->
+                    <div id="jezProgressContainer" class="hidden mb-6 bg-gray-50 dark:bg-slate-900 p-3 rounded-lg border border-gray-100 dark:border-slate-700 relative z-10">
+                        <div class="flex justify-between mb-1 text-xs font-bold"><span id="jezProgressText" class="text-emerald-600 animate-pulse">Start...</span><span id="jezProgressPercent">0%</span></div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 dark:bg-gray-700 overflow-hidden"><div id="jezProgressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-2 rounded-full progress-transition" style="width: 0%"></div></div>
+                    </div>
+
+                    <!-- Alerty -->
+                    <div id="jezErrorAlert" class="hidden mb-6 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 text-red-700 dark:text-red-400 p-4 rounded text-sm relative z-10">
+                        <p class="font-bold mb-1"><i class="fas fa-exclamation-circle mr-2"></i>Wystąpił błąd</p>
+                        <span id="jezErrorMessage"></span>
+                    </div>
+                    <div id="jezOkAlert" class="hidden mb-6 bg-emerald-50 dark:bg-emerald-900/20 border-l-4 border-emerald-500 text-emerald-700 dark:text-emerald-400 p-4 rounded text-sm relative z-10">
+                        <span id="jezOkMessage"></span>
+                    </div>
+                    <div id="jezWarnAlert" class="hidden mb-6 bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 text-amber-700 dark:text-amber-400 p-4 rounded text-xs relative z-10">
+                        <p class="font-bold mb-1"><i class="fas fa-triangle-exclamation mr-2"></i>Ostrzeżenia odczytu</p>
+                        <span id="jezWarnMessage"></span>
+                    </div>
+
+                    <!-- Przyciski (układ jak w panelu Warszawy) -->
+                    <div class="grid grid-cols-3 gap-4 relative z-10">
+                        <!-- SYNCHRONIZACJA: pobiera PDF ze strony gminy i od razu go odczytuje -->
+                        <button id="jezRunBtn" onclick="handleJezMainButton()"
+                                class="col-span-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
+                            <i class="fas fa-circle-notch fa-spin hidden" id="jezBtnSpinner"></i>
+                            <span id="jezBtnIcon"><i class="fas fa-sync-alt text-lg group-hover:rotate-180 transition-transform duration-700"></i></span>
+                            <span id="jezBtnText">Synchronizuj</span>
+                        </button>
+
+                        <!-- WYSYŁKA TERMINÓW DO KALENDARZA GOOGLE -->
+                        <button id="jezCalBtn" onclick="handleJezCalendarButton()"
+                                class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 py-3 rounded-lg transition-all flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
+                            <i class="fas fa-circle-notch fa-spin hidden" id="jezCalSpinner"></i>
+                            <i id="jezCalIcon" class="fas fa-calendar-plus text-emerald-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
+                            <span id="jezCalText">Do kalendarza</span>
+                        </button>
+
+                        <button id="jezPdfBtn" onclick="openJezPdf()"
+                                class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
+                            <i class="fas fa-file-pdf text-red-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
+                            <span>Oryginał</span>
+                        </button>
+
+                        <button onclick="viewJezLogs()"
+                                class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 py-3 rounded-lg transition-all flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
+                            <i class="fas fa-terminal text-gray-500 dark:text-gray-400 text-lg group-hover:scale-110 transition-transform duration-300"></i>
+                            <span>Logi</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- NAJBLIŻSZE ODBIORY -->
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+                    <h3 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider mb-6 flex items-center border-b border-gray-100 dark:border-slate-700 pb-4">
+                        <i class="far fa-calendar-alt mr-2 text-lg text-emerald-500"></i> Najbliższe odbiory
+                    </h3>
+                    <div id="jezUpcoming" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+                </div>
+
+                <!-- HARMONOGRAM ROCZNY -->
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 flex-grow">
+                    <h3 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider mb-6 flex items-center border-b border-gray-100 dark:border-slate-700 pb-4">
+                        <i class="fas fa-table mr-2 text-lg text-blue-500"></i> Harmonogram roczny
+                    </h3>
+                    <div id="jezYearTable" class="overflow-x-auto"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -229,6 +390,7 @@
   <script type="module">
     import autoAnimate from 'https://cdn.jsdelivr.net/npm/@formkit/auto-animate/index.mjs';
     autoAnimate(document.getElementById('scheduleContainer'), { duration: 300 });
+    autoAnimate(document.getElementById('jezUpcoming'), { duration: 300 });
   </script>
 
   <script>
@@ -299,6 +461,10 @@
         const addrInput = document.getElementById('addressInput');
         if(addrInput) addrInput.addEventListener('input', validateRunButton);
         validateRunButton();
+
+        // Jeziorowskie (osobny widok)
+        initRegion();
+        initJeziorowskie();
     });
 
     // --- LOGOWANIE I STATUS ---
@@ -309,35 +475,88 @@
             const data = await res.json();
             isAuthenticated = data.authenticated;
             updateMainButton();
+            updateCalendarButton();
+            updateJezButton();
             validateRunButton();
         } catch(e) { console.error("Auth check failed", e); }
     }
 
+    // Duzy przycisk pobiera harmonogram ze strony 19115 do aplikacji.
+    // Logowanie do Google dotyczy juz tylko wysylki, wiec siedzi przy przycisku
+    // "Do kalendarza" ponizej.
     function updateMainButton() {
         const btn = document.getElementById('runBtn');
         const iconSpan = document.getElementById('btnIcon');
         const textSpan = document.getElementById('btnText');
-        
-        // Reset classes
-        btn.className = "col-span-3 font-bold py-4 px-6 rounded-lg shadow-lg transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group";
-        
+        if (!btn || !iconSpan || !textSpan) return;
+
+        btn.className = "col-span-2 md:col-span-4 font-bold py-4 px-6 rounded-lg shadow-lg transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group";
+        btn.classList.add('bg-gradient-to-r', 'from-emerald-600', 'to-teal-600', 'hover:from-emerald-500', 'hover:to-teal-500', 'text-white', 'shadow-emerald-500/20');
+        iconSpan.innerHTML = '<i class="fas fa-sync-alt text-lg group-hover:rotate-180 transition-transform duration-700"></i>';
+        textSpan.textContent = 'Synchronizuj';
+    }
+
+    function updateCalendarButton() {
+        const btn = document.getElementById('calBtn');
+        const ikona = document.getElementById('calBtnIcon');
+        const tekst = document.getElementById('calBtnText');
+        if (!btn || !ikona || !tekst) return;
+
         if (isAuthenticated) {
-            btn.classList.add('bg-gradient-to-r', 'from-emerald-600', 'to-teal-600', 'hover:from-emerald-500', 'hover:to-teal-500', 'text-white', 'shadow-emerald-500/20');
-            iconSpan.innerHTML = '<i class="fas fa-sync-alt text-lg group-hover:rotate-180 transition-transform duration-700"></i>';
-            textSpan.textContent = 'Synchronizuj Teraz';
+            ikona.className = 'fas fa-calendar-plus text-emerald-500 text-lg group-hover:scale-110 transition-transform duration-300';
+            tekst.textContent = 'Do kalendarza';
         } else {
-            btn.classList.add('bg-blue-600', 'hover:bg-blue-700', 'text-white', 'shadow-blue-500/30');
-            iconSpan.innerHTML = '<i class="fab fa-google text-lg"></i>';
-            textSpan.textContent = 'Połącz z Google Calendar';
+            ikona.className = 'fab fa-google text-blue-500 text-lg group-hover:scale-110 transition-transform duration-300';
+            tekst.textContent = 'Połącz z Google';
         }
     }
 
     function handleMainButton() {
-        if (isAuthenticated) {
-            runScraping();
-        } else {
-            window.location.href = '/login';
+        runScraping();
+    }
+
+    function handleCalendarButton() {
+        if (!isAuthenticated) { window.location.href = '/login'; return; }
+        runCalendarSync();
+    }
+
+    async function runCalendarSync() {
+        const btn = document.getElementById('calBtn');
+        const spinner = document.getElementById('calBtnSpinner');
+        const ikona = document.getElementById('calBtnIcon');
+        const alertEl = document.getElementById('errorAlert');
+
+        btn.disabled = true;
+        btn.classList.add('opacity-75', 'cursor-not-allowed');
+        spinner.classList.remove('hidden');
+        ikona.classList.add('hidden');
+        alertEl.classList.add('hidden');
+
+        const allowedTypes = Object.keys(syncPreferences).filter(key => syncPreferences[key]);
+
+        try {
+            const res = await fetch('/api/calendar-sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ allowedTypes: allowedTypes })
+            });
+            const data = await res.json();
+            if (data.status === 'started') startPolling();
+            else throw new Error(data.message || 'Błąd uruchamiania');
+        } catch (e) {
+            resetCalBtn();
+            document.getElementById('errorMessage').innerText = e.message;
+            alertEl.classList.remove('hidden');
         }
+    }
+
+    function resetCalBtn() {
+        const btn = document.getElementById('calBtn');
+        if (!btn) return;
+        btn.disabled = false;
+        btn.classList.remove('opacity-75', 'cursor-not-allowed');
+        document.getElementById('calBtnSpinner').classList.add('hidden');
+        document.getElementById('calBtnIcon').classList.remove('hidden');
     }
 
     // --- LOGIKA APLIKACJI ---
@@ -366,7 +585,8 @@
             const res = await fetch('/api/sync', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ address: address, allowedTypes: allowedTypes })
+                // sendToCalendar: false -> samo pobranie danych do aplikacji
+                body: JSON.stringify({ address: address, allowedTypes: allowedTypes, sendToCalendar: false })
             });
             const data = await res.json();
             
@@ -415,6 +635,7 @@
                 if (state.status === 'finished' || state.status === 'error') {
                     clearInterval(pollingInterval);
                     resetBtn();
+                    resetCalBtn();
                     await loadLastState();
 
                     if (state.status === 'error') {
@@ -675,6 +896,473 @@
     }
     function closeModal() {
         document.getElementById('logsModal').classList.add('hidden');
+    }
+
+    // =====================================================================
+    //  JEZIOROWSKIE (gmina Stare Juchy) - osobny widok, osobne API
+    //  Nic tutaj nie dotyka logiki warszawskiej.
+    // =====================================================================
+
+    // Program obsługuje wyłącznie sektor II - numer siedzi po stronie serwera.
+    let jezFractions = [];
+    let jezCurrent = null;      // dane wybranego sektora
+    let jezPrefs = {};          // ktore frakcje synchronizowac
+    let jezLogs = [];
+    let jezPolling = null;
+    let jezCalendarName = '';
+
+    // --- przelacznik regionu ---
+
+    function initRegion() {
+        const zapisany = localStorage.getItem('wasteRegion') || 'warszawa';
+        switchRegion(zapisany, true);
+    }
+
+    function switchRegion(region, cichy) {
+        localStorage.setItem('wasteRegion', region);
+        const jest = region === 'jeziorowskie';
+
+        document.getElementById('viewWarszawa').classList.toggle('hidden', jest);
+        document.getElementById('viewJeziorowskie').classList.toggle('hidden', !jest);
+        document.getElementById('headerSubtitle').textContent = jest
+            ? 'Stare Juchy / KOMA & Google Calendar'
+            : 'Warszawa 19115 & Google Calendar';
+
+        const aktywny = "px-3 md:px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-all flex items-center gap-2 bg-emerald-600 text-white shadow";
+        const pasywny = "px-3 md:px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-all flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700";
+        document.getElementById('btnRegionWarszawa').className = jest ? pasywny : aktywny;
+        document.getElementById('btnRegionJeziorowskie').className = jest ? aktywny : pasywny;
+
+        if (jest && !cichy && !jezCurrent) initJeziorowskie();
+    }
+
+    // --- wczytanie listy sektorow ---
+
+    async function initJeziorowskie() {
+        try {
+            const res = await fetch('/api/jeziorowskie/config');
+            const data = await res.json();
+            jezFractions = data.fractions || [];
+            jezCalendarName = data.calendar || '';
+
+            const link = document.getElementById('jezStronaLink');
+            if (link && data.strona) {
+                link.href = data.strona;
+                link.title = data.strona;
+            }
+
+            initJezPrefs();
+            renderJezFilters();
+            await loadJezSchedule();
+            checkJezRunning();
+        } catch (e) {
+            console.error('Jeziorowskie init', e);
+            pokazJezBlad('Nie udało się wczytać danych harmonogramu.');
+        }
+    }
+
+    function pokazJezBlad(tekst) {
+        const box = document.getElementById('jezErrorAlert');
+        box.classList.remove('hidden');
+        document.getElementById('jezErrorMessage').textContent = tekst;
+    }
+
+    function initJezPrefs() {
+        const zapis = localStorage.getItem('jezSyncPrefs');
+        const wczytane = zapis ? JSON.parse(zapis) : {};
+        jezPrefs = {};
+        jezFractions.forEach(f => {
+            jezPrefs[f.id] = wczytane[f.id] !== undefined ? wczytane[f.id] : true;
+        });
+        localStorage.setItem('jezSyncPrefs', JSON.stringify(jezPrefs));
+    }
+
+    function renderJezFilters() {
+        const c = document.getElementById('jezFilters');
+        c.innerHTML = '';
+        jezFractions.forEach(f => {
+            const label = document.createElement('label');
+            label.className = "flex items-center space-x-3 p-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition group";
+            label.innerHTML = `
+                <input type="checkbox" class="peer w-5 h-5 text-emerald-600 rounded border-gray-300 dark:border-slate-600 focus:ring-emerald-500 dark:bg-slate-800 transition-all"
+                    ${jezPrefs[f.id] ? 'checked' : ''} onchange="toggleJezPref('${f.id}', this.checked)">
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-200 select-none flex-grow group-hover:text-gray-900 dark:group-hover:text-white transition-colors">${f.nazwa}</span>
+                <i class="${f.icon} text-gray-400 dark:text-slate-500 text-sm group-hover:text-emerald-500 transition-colors"></i>
+            `;
+            c.appendChild(label);
+        });
+    }
+
+    function toggleJezPref(id, checked) {
+        jezPrefs[id] = checked;
+        localStorage.setItem('jezSyncPrefs', JSON.stringify(jezPrefs));
+        if (jezCurrent) {
+            renderJezUpcoming(jezCurrent);
+            renderJezYear(jezCurrent);
+            updateJezCount();
+        }
+    }
+
+    async function loadJezSchedule() {
+        try {
+            const res = await fetch('/api/jeziorowskie/schedule');
+            if (!res.ok) throw new Error('brak danych');
+            jezCurrent = await res.json();
+            renderJezSector(jezCurrent);
+        } catch (e) {
+            pokazJezBlad('Nie udało się wczytać harmonogramu. '
+                + 'Kliknij Synchronizuj, aby pobrać go ze strony gminy.');
+        }
+    }
+
+    function renderJezSector(d) {
+        document.getElementById('jezTitle').textContent = `${d.sektor} · ${d.rok}`;
+        document.getElementById('jezSourceInfo').textContent = d.zrodlo_pdf || '-';
+        document.getElementById('jezSectorInfo').textContent = d.wykaz || '';
+
+        const warn = document.getElementById('jezWarnAlert');
+        if (d.ostrzezenia && d.ostrzezenia.length) {
+            warn.classList.remove('hidden');
+            document.getElementById('jezWarnMessage').innerHTML = d.ostrzezenia.join('<br>');
+        } else {
+            warn.classList.add('hidden');
+        }
+
+        document.getElementById('jezPdfBtn').disabled = !d.pdf_dostepny;
+        updateJezCount();
+        renderJezUpcoming(d);
+        renderJezYear(d);
+        updateJezButton();
+    }
+
+    function jezWybraneFrakcje() {
+        return Object.keys(jezPrefs).filter(k => jezPrefs[k]);
+    }
+
+    function updateJezCount() {
+        if (!jezCurrent) return;
+        const dozwolone = jezWybraneFrakcje();
+        const tylkoPrzyszle = document.getElementById('jezOnlyUpcoming').checked;
+        const dzis = new Date().toISOString().slice(0, 10);
+        let ile = 0;
+        jezCurrent.odbiory.forEach(o => {
+            if (tylkoPrzyszle && o.data < dzis) return;
+            o.frakcje.forEach(f => { if (dozwolone.includes(f.id)) ile++; });
+        });
+        document.getElementById('jezCount').textContent = ile;
+    }
+
+    function toggleJezRange() {
+        const on = document.getElementById('jezOnlyUpcoming').checked;
+        const t = document.getElementById('jezRangeText');
+        t.textContent = on ? 'Tylko nadchodzące' : 'Cały rok';
+        t.className = on
+            ? "text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wide mt-1 ml-8"
+            : "text-[10px] font-bold text-gray-400 uppercase tracking-wide mt-1 ml-8";
+        updateJezCount();
+    }
+
+    const MIESIACE_DOPELNIACZ = ['stycznia','lutego','marca','kwietnia','maja','czerwca',
+                                 'lipca','sierpnia','września','października','listopada','grudnia'];
+
+    function formatujDate(iso) {
+        const [r, m, d] = iso.split('-').map(Number);
+        return `${d} ${MIESIACE_DOPELNIACZ[m - 1]}`;
+    }
+
+    // Jeden kafelek na frakcję - jej najbliższy termin, chronologicznie.
+    function renderJezUpcoming(d) {
+        const c = document.getElementById('jezUpcoming');
+        const dozwolone = jezWybraneFrakcje();
+        const dzis = new Date().toISOString().slice(0, 10);
+
+        // pierwszy nadchodzący termin każdej frakcji (odbiory są posortowane rosnąco)
+        const najblizszy = {};
+        d.odbiory.forEach(o => {
+            if (o.data < dzis) return;
+            o.frakcje.forEach(f => {
+                if (!najblizszy[f.id]) najblizszy[f.id] = { ...f, data: o.data, dzien: o.dzien_tygodnia };
+            });
+        });
+
+        // frakcje bez terminu do konca roku ida na sam koniec
+        const pozycje = Object.values(najblizszy).concat(
+            (d.frakcje || []).filter(f => !najblizszy[f.id]).map(f => ({ ...f, data: null })));
+
+        if (!pozycje.length) {
+            c.innerHTML = '<p class="col-span-full text-sm text-gray-400 py-6 text-center">Brak danych harmonogramu.</p>';
+            return;
+        }
+
+        // tak jak w panelu Warszawy: zaznaczone frakcje na gorze, w obu grupach
+        // chronologicznie - dzieki temu odznaczenie przesuwa kafelek w dol
+        pozycje.sort((a, b) => {
+            const aktA = dozwolone.includes(a.id), aktB = dozwolone.includes(b.id);
+            if (aktA !== aktB) return aktA ? -1 : 1;
+            return (a.data || '9999').localeCompare(b.data || '9999');
+        });
+
+        // Elementy uaktualniamy w miejscu (po id), zamiast przebudowywac cały
+        // kontener - inaczej autoAnimate widzialoby usuniecie i dodanie wszystkiego
+        // od nowa i nie byloby czego animowac.
+        const istniejace = {};
+        Array.from(c.children).forEach(el => {
+            if (el.id) istniejace[el.id] = el;
+            else el.remove();   // np. komunikat zastępczy o braku danych
+        });
+
+        pozycje.forEach(f => {
+            const akt = dozwolone.includes(f.id);
+            const dni = f.data
+                ? Math.round((new Date(f.data) - new Date(dzis)) / 86400000) : null;
+            const pilne = dni !== null && dni <= 1;
+            const kiedy = dni === null ? ''
+                : (dni === 0 ? 'dziś' : (dni === 1 ? 'jutro' : `za ${dni} dni`));
+
+            const ramka = (akt && f.data)
+                ? `bg-white dark:bg-slate-700 border-l-4 ${pilne ? 'border-amber-500' : 'border-emerald-500'} shadow-sm`
+                : 'bg-gray-50 dark:bg-slate-800/50 border-l-4 border-gray-300 dark:border-slate-600 opacity-60 grayscale-[0.5]';
+
+            let znacznik = '';
+            if (!f.data) {
+                znacznik = '';
+            } else if (akt) {
+                znacznik = `<span class="text-[10px] font-bold uppercase px-2 py-1 rounded whitespace-nowrap ${pilne
+                        ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                        : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'}">${kiedy}</span>`;
+            } else {
+                znacznik = '<span class="text-[10px] font-bold uppercase px-2 py-1 rounded bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-gray-400">Pomiń</span>';
+            }
+
+            const opis = f.data
+                ? `${formatujDate(f.data)} · ${f.dzien}`
+                : 'brak terminu do końca roku';
+
+            const klasa = `p-4 rounded-xl flex justify-between items-center gap-3 ${ramka} transition-all duration-300`;
+            const tresc = `
+                    <div class="flex items-center gap-4 min-w-0">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-gray-100 dark:bg-slate-800 ${akt && f.data ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400'}">
+                            <i class="${f.icon} text-base"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <h4 class="font-bold text-sm ${akt && f.data ? 'text-gray-800 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'} tracking-tight truncate">${f.nazwa}</h4>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5">${opis}</p>
+                        </div>
+                    </div>
+                    ${znacznik}`;
+
+            const id = `jez-card-${f.id}`;
+            let div = istniejace[id];
+            if (!div) {
+                div = document.createElement('div');
+                div.id = id;
+            }
+            if (div.className !== klasa) div.className = klasa;
+            if (div.innerHTML !== tresc) div.innerHTML = tresc;
+            c.appendChild(div);   // przeniesienie istniejacego elementu = animacja
+            delete istniejace[id];
+        });
+
+        Object.values(istniejace).forEach(el => el.remove());
+    }
+
+    function renderJezYear(d) {
+        const c = document.getElementById('jezYearTable');
+        if (!d.wg_miesiecy || !d.wg_miesiecy.length) { c.innerHTML = ''; return; }
+        const dozwolone = jezWybraneFrakcje();
+
+        const naglowki = d.frakcje.map(f =>
+            `<th class="px-3 py-2 text-center font-bold ${dozwolone.includes(f.id) ? '' : 'opacity-40'}">
+                <i class="${f.icon} block mb-1 text-sm"></i>
+                <span class="text-[10px] leading-tight block">${f.nazwa}</span>
+             </th>`).join('');
+
+        const wiersze = d.wg_miesiecy.map(m => {
+            const komorki = d.frakcje.map(f => {
+                const dni = (m.dni && m.dni[f.id]) ? m.dni[f.id] : [];
+                const akt = dozwolone.includes(f.id);
+                return `<td class="px-3 py-2 text-center font-mono ${akt ? 'text-gray-700 dark:text-gray-200' : 'text-gray-300 dark:text-slate-600'}">${dni.length ? dni.join(', ') : '·'}</td>`;
+            }).join('');
+            return `<tr class="border-t border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40">
+                        <td class="px-3 py-2 font-bold text-gray-600 dark:text-gray-300 whitespace-nowrap">${m.nazwa}</td>${komorki}
+                    </tr>`;
+        }).join('');
+
+        c.innerHTML = `
+            <table class="w-full text-xs border-collapse">
+                <thead class="text-gray-500 dark:text-gray-400">
+                    <tr><th class="px-3 py-2 text-left">Miesiąc</th>${naglowki}</tr>
+                </thead>
+                <tbody>${wiersze}</tbody>
+            </table>`;
+    }
+
+    // --- synchronizacja z Kalendarzem Google ---
+
+    // Duzy przycisk: pobiera PDF ze strony gminy i od razu go odczytuje.
+    async function handleJezMainButton() {
+        const btn = document.getElementById('jezRunBtn');
+        const ok = document.getElementById('jezOkAlert');
+        const err = document.getElementById('jezErrorAlert');
+        ok.classList.add('hidden');
+        err.classList.add('hidden');
+
+        btn.disabled = true;
+        btn.classList.add('opacity-75', 'cursor-not-allowed');
+        document.getElementById('jezBtnSpinner').classList.remove('hidden');
+        document.getElementById('jezBtnIcon').classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/jeziorowskie/fetch', { method: 'POST' });
+            const d = await res.json();
+            if (d.status !== 'started') throw new Error(d.message || 'Nie udało się uruchomić');
+            startJezPolling(true);
+        } catch (e) {
+            resetJezRunBtn();
+            err.classList.remove('hidden');
+            document.getElementById('jezErrorMessage').textContent = e.message;
+        }
+    }
+
+    function resetJezRunBtn() {
+        const btn = document.getElementById('jezRunBtn');
+        if (!btn) return;
+        btn.disabled = false;
+        btn.classList.remove('opacity-75', 'cursor-not-allowed');
+        document.getElementById('jezBtnSpinner').classList.add('hidden');
+        document.getElementById('jezBtnIcon').classList.remove('hidden');
+    }
+
+    // Przycisk "Do kalendarza" - tak samo jak w panelu Warszawy.
+    function updateJezButton() {
+        const ikona = document.getElementById('jezCalIcon');
+        const tekst = document.getElementById('jezCalText');
+        if (!ikona || !tekst) return;
+
+        if (isAuthenticated) {
+            ikona.className = 'fas fa-calendar-plus text-emerald-500 text-lg group-hover:scale-110 transition-transform duration-300';
+            tekst.textContent = 'Do kalendarza';
+        } else {
+            ikona.className = 'fab fa-google text-blue-500 text-lg group-hover:scale-110 transition-transform duration-300';
+            tekst.textContent = 'Połącz z Google';
+        }
+    }
+
+    function handleJezCalendarButton() {
+        if (!isAuthenticated) { window.location.href = '/login'; return; }
+        runJezSync();
+    }
+
+    async function runJezSync() {
+        if (!jezCurrent) { alert('Brak wczytanego harmonogramu.'); return; }
+        const dozwolone = jezWybraneFrakcje();
+        if (!dozwolone.length) { alert('Zaznacz przynajmniej jedną frakcję.'); return; }
+
+        const btn = document.getElementById('jezCalBtn');
+        btn.disabled = true;
+        btn.classList.add('opacity-75', 'cursor-not-allowed');
+        document.getElementById('jezCalSpinner').classList.remove('hidden');
+        document.getElementById('jezCalIcon').classList.add('hidden');
+        document.getElementById('jezErrorAlert').classList.add('hidden');
+        document.getElementById('jezOkAlert').classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/jeziorowskie/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    allowedTypes: dozwolone,
+                    onlyUpcoming: document.getElementById('jezOnlyUpcoming').checked
+                })
+            });
+            const data = await res.json();
+            if (data.status === 'started') startJezPolling();
+            else throw new Error(data.message || 'Nie udało się uruchomić');
+        } catch (e) {
+            resetJezBtn();
+            document.getElementById('jezErrorAlert').classList.remove('hidden');
+            document.getElementById('jezErrorMessage').textContent = e.message;
+        }
+    }
+
+    function resetJezBtn() {
+        const btn = document.getElementById('jezCalBtn');
+        if (!btn) return;
+        btn.disabled = false;
+        btn.classList.remove('opacity-75', 'cursor-not-allowed');
+        document.getElementById('jezCalSpinner').classList.add('hidden');
+        document.getElementById('jezCalIcon').classList.remove('hidden');
+    }
+
+    function startJezPolling(pobieranie) {
+        const box = document.getElementById('jezProgressContainer');
+        box.classList.remove('hidden');
+        if (jezPolling) clearInterval(jezPolling);
+
+        jezPolling = setInterval(async () => {
+            try {
+                const res = await fetch('/api/jeziorowskie/progress');
+                const st = await res.json();
+                document.getElementById('jezProgressBar').style.width = st.percent + '%';
+                document.getElementById('jezProgressText').textContent = st.message;
+                document.getElementById('jezProgressPercent').textContent = st.percent + '%';
+
+                if (st.status === 'finished' || st.status === 'error') {
+                    clearInterval(jezPolling);
+                    resetJezBtn();
+                    resetJezRunBtn();
+                    if (st.result) jezLogs = st.result.logs || [];
+
+                    if (st.status === 'error') {
+                        document.getElementById('jezErrorAlert').classList.remove('hidden');
+                        document.getElementById('jezErrorMessage').textContent = st.message;
+                    } else if (pobieranie) {
+                        const r = st.result || {};
+                        await initJeziorowskie();
+                        document.getElementById('jezOkAlert').classList.remove('hidden');
+                        document.getElementById('jezOkMessage').innerHTML =
+                            `<b>Pobrano ze strony gminy.</b> ${r.sektor || ''} ${r.rok || ''}: `
+                            + `${r.liczba_odbiorow || 0} terminów`
+                            + ((r.ostrzezenia || []).length
+                                ? ` · ostrzeżeń odczytu: ${r.ostrzezenia.length}` : '');
+                        setTimeout(() => box.classList.add('hidden'), 5000);
+                    } else {
+                        const r = st.result || {};
+                        document.getElementById('jezOkAlert').classList.remove('hidden');
+                        document.getElementById('jezOkMessage').innerHTML =
+                            `<b>Gotowe.</b> Dodano ${r.added_events || 0} wydarzeń` +
+                            (r.skipped ? `, pominięto ${r.skipped} duplikatów` : '') +
+                            ` w kalendarzu „${jezCalendarName}”.`;
+                        setTimeout(() => box.classList.add('hidden'), 4000);
+                    }
+                }
+            } catch (e) { console.error('jez poll', e); }
+        }, 800);
+    }
+
+    async function checkJezRunning() {
+        try {
+            const res = await fetch('/api/jeziorowskie/progress');
+            const st = await res.json();
+            if (st.status === 'running') {
+                document.getElementById('jezCalBtn').disabled = true;
+                document.getElementById('jezCalSpinner').classList.remove('hidden');
+                document.getElementById('jezCalIcon').classList.add('hidden');
+                startJezPolling();
+            }
+        } catch (e) {}
+    }
+
+    // --- pozostale akcje ---
+
+    function openJezPdf() {
+        if (!jezCurrent) return;
+        window.open(`/api/jeziorowskie/pdf?t=${Date.now()}`, '_blank');
+    }
+
+    function viewJezLogs() {
+        document.getElementById('logsContent').value = jezLogs.join('\n') || "Brak logów.";
+        document.getElementById('logsModal').classList.remove('hidden');
     }
   </script>
 </body>

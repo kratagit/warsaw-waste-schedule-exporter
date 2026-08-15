@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import datetime
 import pickle
@@ -7,7 +8,10 @@ import glob
 import threading
 import math
 import fitz  # PyMuPDF
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory
+
+# Harmonogram gminy Stare Juchy (Jeziorowskie) - modul niezalezny od czesci warszawskiej
+import jeziorowskie
 
 # Selenium
 from selenium import webdriver
@@ -33,9 +37,12 @@ os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # Pozwala na logowanie bez HTTPS
 TARGET_URL = "https://warszawa19115.pl/harmonogramy-wywozu-odpadow"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 CALENDAR_NAME = "Wywóz Śmieci"
-CREDENTIALS_FILE = "credentials.json"
-TOKEN_FILE = "token.pickle"
-STATE_FILE = "last_state.json"
+# Sciezki plikow ze stanem mozna przestawic zmiennymi srodowiskowymi - w
+# kontenerze wskazujemy na /app/data, zeby przezyly aktualizacje obrazu.
+# Bez zmiennych zachowanie jest takie jak dotad (pliki obok app.py).
+CREDENTIALS_FILE = os.environ.get("CREDENTIALS_FILE", "credentials.json")
+TOKEN_FILE = os.environ.get("TOKEN_FILE", "token.pickle")
+STATE_FILE = os.environ.get("STATE_FILE", "last_state.json")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, 'static')
@@ -66,6 +73,61 @@ progress_state = {
     "result": None
 }
 progress_lock = threading.Lock()
+
+#: Gdzie szukamy przegladarki na Windows. Chrome ma pierwszenstwo, ale gdy go
+#: nie ma, wystarczy Edge - to tez Chromium, wiec scraping dziala tak samo.
+CHROME_PATHS = [
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Google\Chrome\Application\chrome.exe"),
+]
+EDGE_PATHS = [
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+]
+
+
+def find_browser_binary(paths):
+    """Zwraca pierwsza istniejaca sciezke do przegladarki albo None."""
+    for p in paths:
+        if p and os.path.exists(p):
+            return p
+    return None
+
+
+def build_browser_options(options_class):
+    """Buduje te same opcje uruchomienia dla Chrome i dla Edge."""
+    o = options_class()
+    o.add_argument("--headless=new")
+    o.add_argument("--window-size=1920,1080")
+    o.add_argument("--log-level=3")
+    o.add_argument("--no-sandbox")
+    o.add_argument("--disable-dev-shm-usage")
+    o.add_argument("--disable-gpu")
+    prefs = {"download.default_directory": STATIC_DIR, "download.prompt_for_download": False, "plugins.always_open_pdf_externally": True}
+    o.add_experimental_option("prefs", prefs)
+    return o
+
+
+def safe_print(msg):
+    """Wypisuje komunikat tak, by polskie znaki nie wywrocily procesu.
+
+    Gdy stdout nie jest terminalem (przekierowanie do pliku, usluga w tle),
+    Windows koduje wyjscie w cp1252 i print z "BŁĄD" rzuca UnicodeEncodeError.
+    Taki wyjatek potrafil zabic watek w trakcie obslugi bledu i zostawic
+    aplikacje na zawsze w stanie "running" - z paskiem postepu, ktory nie rusza.
+    """
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        try:
+            kod = getattr(sys.stdout, "encoding", None) or "ascii"
+            print(msg.encode(kod, errors="replace").decode(kod, errors="replace"))
+        except Exception:
+            pass
+    except Exception:
+        pass
+
 
 def update_progress(percent, message, status="running"):
     with progress_lock:
@@ -202,7 +264,114 @@ def save_state(state):
 
 # --- PROCES SYNCHRONIZACJI ---
 
-def run_full_process(address, allowed_types):
+def send_schedule_to_calendar(service_google, schedule_data, allowed_types, log,
+                              progress_start=75, progress_end=95):
+    """Wysyla terminy do kalendarza Google i zwraca liczbe dodanych wydarzen.
+
+    Wydzielone z run_full_process, zeby ta sama logika obslugiwala dwa przypadki:
+    pobranie danych razem z wysylka oraz sama wysylke wczesniej pobranych danych.
+    """
+    update_progress(progress_start, "Wysyłanie do Kalendarza...")
+    cal_id = None
+    page_token = None
+    while True:
+        clist = service_google.calendarList().list(pageToken=page_token).execute()
+        for e in clist['items']:
+            if e['summary'] == CALENDAR_NAME: cal_id = e['id']; break
+        if cal_id: break
+        page_token = clist.get('nextPageToken')
+        if not page_token: break
+
+    if not cal_id:
+        cal_id = service_google.calendars().insert(body={'summary': CALENDAR_NAME, 'timeZone': 'Europe/Warsaw'}).execute()['id']
+        log("Utworzono nowy kalendarz.")
+
+    now_iso = datetime.datetime.utcnow().isoformat() + 'Z'
+    existing = service_google.events().list(calendarId=cal_id, timeMin=now_iso, singleEvents=True).execute().get('items', [])
+
+    count = 0
+    rozpietosc = max(1, progress_end - progress_start)
+    for i, (date_text, waste_type) in enumerate(schedule_data):
+        update_progress(progress_start + int((i/len(schedule_data))*rozpietosc), f"Wysyłanie: {waste_type}...")
+        if waste_type not in allowed_types:
+            log(f" -> Pominięto (filtr): {waste_type}")
+            continue
+        edate = parse_polish_date(date_text)
+        if not edate: continue
+        estr = edate.isoformat()
+        summary = f"Odbiór: {waste_type}"
+
+        dup = False
+        for ev in existing:
+            if ev.get('start', {}).get('date') == estr and ev.get('summary') == summary: dup = True; break
+
+        if not dup:
+            body = {
+                'summary': summary, 'start': {'date': estr}, 'end': {'date': estr},
+                'colorId': WASTE_COLORS.get(waste_type, "8"), 'transparency': 'transparent',
+                'reminders': {'useDefault': False, 'overrides': [
+                    {'method': 'popup', 'minutes': 300},
+                    {'method': 'email', 'minutes': 300}
+                ]}
+            }
+            service_google.events().insert(calendarId=cal_id, body=body).execute()
+            log(f" -> DODANO: {waste_type} ({estr})")
+            count += 1
+        else:
+            log(f" -> Duplikat: {waste_type}")
+    return count
+
+
+def push_state_to_calendar(allowed_types):
+    """Wysyla do kalendarza harmonogram juz pobrany do aplikacji (bez scrapingu)."""
+    state = load_state()
+    results = dict(state)
+    results["logs"] = []
+    results["status"] = "success"
+    results.pop("message", None)
+
+    def log(msg):
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        safe_print(f"[{ts}] {msg}")
+        results["logs"].append(f"[{ts}] {msg}")
+
+    try:
+        service_google = get_google_service()
+        if not service_google:
+            raise Exception("Brak autoryzacji Google. Kliknij 'Połącz z Google' w panelu.")
+
+        schedule_data = [(item["dateText"], item["wasteType"]) for item in state.get("schedule", [])]
+        if not schedule_data:
+            raise Exception("Brak pobranych danych. Najpierw kliknij 'Synchronizuj'.")
+
+        update_progress(10, "Łączenie z Kalendarzem Google...")
+        log(f"--- WYSYŁKA DO KALENDARZA: {len(schedule_data)} terminów ---")
+        count = send_schedule_to_calendar(service_google, schedule_data, allowed_types, log,
+                                          progress_start=20, progress_end=95)
+
+        results["added_events"] = count
+        results["allowed_types"] = allowed_types
+        results['timestamp'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log(f"--- SUKCES: Dodano {count} wydarzeń ---")
+        save_state(results)
+
+        with progress_lock:
+            progress_state["percent"] = 100
+            progress_state["message"] = "Zakończono pomyślnie!"
+            progress_state["status"] = "finished"
+            progress_state["result"] = results
+    except Exception as e:
+        log(f"BŁĄD: {str(e)}")
+        with progress_lock:
+            progress_state["status"] = "error"
+            progress_state["message"] = str(e)
+            results["status"] = "error"
+            results["message"] = str(e)
+            progress_state["result"] = results
+        save_state(results)
+
+
+def run_full_process(address, allowed_types, send_to_calendar=True):
     current_state = load_state()
     results = {
         "status": "success", "logs": [], "added_events": 0, "schedule": [],
@@ -214,42 +383,59 @@ def run_full_process(address, allowed_types):
     }
     def log(msg):
         ts = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"[{ts}] {msg}")
+        safe_print(f"[{ts}] {msg}")
         results["logs"].append(f"[{ts}] {msg}")
 
     try:
-        # Sprawdzamy auth na początku
-        service_google = get_google_service()
-        if not service_google:
-             raise Exception("Brak autoryzacji Google. Kliknij 'Połącz z Google' w panelu.")
+        # Autoryzacja Google jest potrzebna tylko wtedy, gdy od razu wysylamy
+        # terminy do kalendarza. Samo pobranie danych ze strony dziala bez logowania.
+        service_google = None
+        if send_to_calendar:
+            service_google = get_google_service()
+            if not service_google:
+                 raise Exception("Brak autoryzacji Google. Kliknij 'Połącz z Google' w panelu.")
 
         update_progress(5, "Start przeglądarki...")
         log(f"--- START DLA: {address} ---")
         
-        chrome_options = Options()
-        chrome_options.add_argument("--headless=new")
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--log-level=3")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        
-        prefs = {"download.default_directory": STATIC_DIR, "download.prompt_for_download": False, "plugins.always_open_pdf_externally": True}
-        chrome_options.add_experimental_option("prefs", prefs)
-        
+        chrome_options = build_browser_options(Options)
+
         # --- ZMIANA: WARUNKOWE UŻYCIE STEROWNIKA ---
         # Na Dockerze (Linux) używamy systemowego. Na Windowsie - Webdriver Manager.
         if os.path.exists("/usr/bin/chromium") and os.path.exists("/usr/bin/chromedriver"):
             chrome_options.binary_location = "/usr/bin/chromium"
             service = Service("/usr/bin/chromedriver")
             log("Używam systemowego Chromium (Docker/Linux).")
+            driver = webdriver.Chrome(service=service, options=chrome_options)
         else:
-            # Importujemy tylko tutaj, żeby Docker nie wywalił błędu przy starcie
-            from webdriver_manager.chrome import ChromeDriverManager
-            service = Service(ChromeDriverManager().install())
-            log("Używam Webdriver Manager (Windows/Local).")
+            chrome_path = find_browser_binary(CHROME_PATHS)
+            edge_path = find_browser_binary(EDGE_PATHS)
+            if not chrome_path and not edge_path:
+                raise Exception(
+                    "Nie znaleziono przeglądarki. Zainstaluj Google Chrome "
+                    "(winget install Google.Chrome) albo Microsoft Edge."
+                )
 
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+            if chrome_path:
+                chrome_options.binary_location = chrome_path
+                # Importujemy tylko tutaj, żeby Docker nie wywalił błędu przy starcie
+                try:
+                    from webdriver_manager.chrome import ChromeDriverManager
+                    service = Service(ChromeDriverManager().install())
+                    log("Używam Chrome + Webdriver Manager (Windows/Local).")
+                    driver = webdriver.Chrome(service=service, options=chrome_options)
+                except ImportError:
+                    # Selenium 4.6+ samo pobiera sterownik (Selenium Manager)
+                    log("Brak webdriver-manager - używam wbudowanego Selenium Manager.")
+                    driver = webdriver.Chrome(options=chrome_options)
+            else:
+                # Edge jest oparty na Chromium, więc scraping działa tak samo,
+                # a na Windowsie jest dostępny bez instalowania czegokolwiek.
+                from selenium.webdriver.edge.options import Options as EdgeOptions
+                edge_options = build_browser_options(EdgeOptions)
+                edge_options.binary_location = edge_path
+                log("Nie znaleziono Chrome - używam Microsoft Edge.")
+                driver = webdriver.Edge(options=edge_options)
         log("Sterownik przeglądarki uruchomiony poprawnie.")
         
         schedule_data = [] 
@@ -331,58 +517,16 @@ def run_full_process(address, allowed_types):
         if not schedule_data: raise Exception("Brak dat na stronie")
 
         # Calendar
-        update_progress(75, "Wysyłanie do Kalendarza...")
-        cal_id = None
-        page_token = None
-        while True:
-            clist = service_google.calendarList().list(pageToken=page_token).execute()
-            for e in clist['items']:
-                if e['summary'] == CALENDAR_NAME: cal_id = e['id']; break
-            if cal_id: break
-            page_token = clist.get('nextPageToken')
-            if not page_token: break
-        
-        if not cal_id:
-            cal_id = service_google.calendars().insert(body={'summary': CALENDAR_NAME, 'timeZone': 'Europe/Warsaw'}).execute()['id']
-            log("Utworzono nowy kalendarz.")
+        if send_to_calendar:
+            count = send_schedule_to_calendar(service_google, schedule_data, allowed_types, log)
+            results["added_events"] = count
+            log(f"--- SUKCES: Dodano {count} wydarzeń ---")
+        else:
+            update_progress(90, "Zapisywanie danych...")
+            log(f"--- SUKCES: Pobrano {len(schedule_data)} terminów (bez wysyłki do kalendarza) ---")
 
-        now_iso = datetime.datetime.utcnow().isoformat() + 'Z'
-        existing = service_google.events().list(calendarId=cal_id, timeMin=now_iso, singleEvents=True).execute().get('items', [])
-
-        count = 0
-        for i, (date_text, waste_type) in enumerate(schedule_data):
-            update_progress(80 + int((i/len(schedule_data))*15), f"Wysyłanie: {waste_type}...")
-            if waste_type not in allowed_types: 
-                log(f" -> Pominięto (filtr): {waste_type}")
-                continue
-            edate = parse_polish_date(date_text)
-            if not edate: continue
-            estr = edate.isoformat()
-            summary = f"Odbiór: {waste_type}"
-            
-            dup = False
-            for ev in existing:
-                if ev.get('start', {}).get('date') == estr and ev.get('summary') == summary: dup = True; break
-            
-            if not dup:
-                body = {
-                    'summary': summary, 'start': {'date': estr}, 'end': {'date': estr},
-                    'colorId': WASTE_COLORS.get(waste_type, "8"), 'transparency': 'transparent',
-                    'reminders': {'useDefault': False, 'overrides': [
-                        {'method': 'popup', 'minutes': 300},
-                        {'method': 'email', 'minutes': 300}
-                    ]}
-                }
-                service_google.events().insert(calendarId=cal_id, body=body).execute()
-                log(f" -> DODANO: {waste_type} ({estr})")
-                count += 1
-            else:
-                log(f" -> Duplikat: {waste_type}")
-
-        results["added_events"] = count
         results['timestamp'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log(f"--- SUKCES: Dodano {count} wydarzeń ---")
-        
+
         save_state(results)
         
         with progress_lock:
@@ -464,10 +608,26 @@ def auth_status():
 
 @app.route('/api/sync', methods=['POST'])
 def api_sync():
-    if not get_google_creds(): return jsonify({"status": "error", "message": "Brak logowania"})
+    # sendToCalendar=False -> samo pobranie harmonogramu ze strony, bez Google
+    send_to_calendar = (request.json or {}).get('sendToCalendar', True)
+    if send_to_calendar and not get_google_creds():
+        return jsonify({"status": "error", "message": "Brak logowania"})
     if progress_state["status"] == "running": return jsonify({"status": "error", "message": "Proces trwa"})
     reset_progress()
-    threading.Thread(target=run_full_process, args=(request.json.get('address'), request.json.get('allowedTypes'))).start()
+    threading.Thread(target=run_full_process, args=(request.json.get('address'), request.json.get('allowedTypes'), send_to_calendar)).start()
+    return jsonify({"status": "started"})
+
+@app.route('/api/calendar-sync', methods=['POST'])
+def api_calendar_sync():
+    """Wysyla do kalendarza harmonogram juz pobrany do aplikacji."""
+    if not get_google_creds(): return jsonify({"status": "error", "message": "Brak logowania"})
+    if progress_state["status"] == "running": return jsonify({"status": "error", "message": "Proces trwa"})
+    state = load_state()
+    if not state.get("schedule"):
+        return jsonify({"status": "error", "message": "Brak pobranych danych. Najpierw kliknij 'Synchronizuj'."})
+    reset_progress()
+    allowed = (request.json or {}).get('allowedTypes') or list(WASTE_COLORS.keys())
+    threading.Thread(target=push_state_to_calendar, args=(allowed,)).start()
     return jsonify({"status": "started"})
 
 @app.route('/api/progress', methods=['GET'])
@@ -485,6 +645,56 @@ def toggle_auto():
 
 @app.route('/api/last-state', methods=['GET'])
 def last_state(): return jsonify(load_state())
+
+# --- JEZIOROWSKIE (sektor II gminy Stare Juchy) ---
+# Osobne trasy i osobny kalendarz - nie dotykaja logiki warszawskiej.
+
+@app.route('/api/jeziorowskie/config', methods=['GET'])
+def jez_config():
+    return jsonify(jeziorowskie.konfiguracja())
+
+@app.route('/api/jeziorowskie/schedule', methods=['GET'])
+def jez_schedule():
+    tylko_przyszle = request.args.get('upcoming', '0') in ('1', 'true', 'True')
+    dane = jeziorowskie.harmonogram(tylko_przyszle=tylko_przyszle)
+    if not dane:
+        return jsonify({"status": "error",
+                        "message": "Brak danych - kliknij Synchronizuj"}), 404
+    return jsonify(dane)
+
+@app.route('/api/jeziorowskie/fetch', methods=['POST'])
+def jez_fetch():
+    """Pobiera harmonogram ze strony gminy i od razu go odczytuje."""
+    if jeziorowskie.czy_trwa():
+        return jsonify({"status": "error", "message": "Proces trwa"})
+    jeziorowskie.uruchom_pobieranie()
+    return jsonify({"status": "started"})
+
+@app.route('/api/jeziorowskie/sync', methods=['POST'])
+def jez_sync():
+    """Wysyla terminy do osobnego kalendarza Google."""
+    service_google = get_google_service()
+    if not service_google:
+        return jsonify({"status": "error", "message": "Brak logowania"})
+    if jeziorowskie.czy_trwa():
+        return jsonify({"status": "error", "message": "Proces trwa"})
+
+    body = request.json or {}
+    dozwolone = body.get('allowedTypes') or [f["id"] for f in jeziorowskie.FRAKCJE]
+    tylko_przyszle = body.get('onlyUpcoming', True)
+    jeziorowskie.uruchom_synchronizacje(service_google, dozwolone, tylko_przyszle)
+    return jsonify({"status": "started"})
+
+@app.route('/api/jeziorowskie/progress', methods=['GET'])
+def jez_progress():
+    return jsonify(jeziorowskie.stan_postepu())
+
+@app.route('/api/jeziorowskie/pdf', methods=['GET'])
+def jez_pdf():
+    sciezka = jeziorowskie.sciezka_pdf()
+    if not sciezka:
+        return jsonify({"status": "error", "message": "Brak pliku PDF"}), 404
+    return send_from_directory(os.path.dirname(sciezka), os.path.basename(sciezka))
 
 if __name__ == '__main__':
     # ssl_context='adhoc' generuje szybki certyfikat w locie

@@ -211,3 +211,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Claude Code (lokalna konfiguracja narzedzia)
+.claude/
+
+# Dane harmonogramow (lokalne, nie trafiaja do repo)
+data/

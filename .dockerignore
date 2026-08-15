@@ -1,0 +1,20 @@
+# Historia gita i pliki narzedzi - niepotrzebne w obrazie
+.git
+.github
+.claude
+.gitignore
+README.md
+LICENSE
+
+# Dane i sekrety montujemy wolumenem, nie wpiekamy w obraz
+data/
+static/
+credentials.json
+token.pickle
+last_state.json
+
+# Smieci Pythona
+__pycache__/
+*.py[cod]
+.venv/
+venv/

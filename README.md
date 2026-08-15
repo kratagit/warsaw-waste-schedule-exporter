@@ -12,6 +12,68 @@ Aplikacja jest przystosowana do działania na domowym serwerze (np. Proxmox) w k
 *   **Automat:** Działa w tle i codziennie rano sprawdza, czy wczoraj był odbiór – jeśli tak, pobiera nowy harmonogram (dla aktualizacji danych na przyszłość).
 *   **Nowoczesne UI:** Tryb ciemny (Dark Mode), pasek postępu w czasie rzeczywistym, animacje kafelków.
 *   **Docker:** Łatwe wdrożenie i izolacja środowiska (Selenium + Chrome w kontenerze).
+*   **Przełącznik regionu:** Warszawa (19115) albo Jeziorowskie / gmina Stare Juchy (KOMA) – patrz niżej.
+
+---
+
+## 🌲 Jeziorowskie (gmina Stare Juchy)
+
+Drugi region, przełączany przyciskiem w nagłówku. Firma KOMA publikuje harmonogram
+jako **PDF, w którym tabela jest obrazkiem** – nie ma tam warstwy tekstowej z datami.
+Dlatego terminy odczytuje moduł `koma_parser.py`, w całości lokalnie i deterministycznie:
+**bez OCR, bez AI i bez usług zewnętrznych**.
+
+Jak to działa:
+
+1.  Z PDF-a wyciągany jest wbudowany obrazek.
+2.  Kolumny tabeli znajdowane są po kolorach nagłówków (czarny = Zmieszane, brązowy = Bio,
+    żółty = Metale i tworzywa, niebieski = Papier, zielony = Szkło, szare = Gabaryty i Popiół),
+    a wiersze po białych separatorach w kolumnie miesięcy.
+3.  W komórkach wyszukiwane są spójne plamy atramentu; przecinki dzielą je na liczby.
+4.  Cyfry rozpoznawane są przez porównanie z wzorcami **renderowanymi z czcionki systemowej**
+    (Arial Bold) – piksel w piksel.
+5.  Odczyt jest sprawdzany: rosnące dni w komórce, zgodność nazwy miesiąca z pozycją wiersza,
+    stały dzień tygodnia dla frakcji i sensowne odstępy. Zastrzeżenia trafiają do pola
+    `ostrzezenia` i są pokazywane w panelu.
+
+Odczyt zweryfikowano ręcznie, komórka po komórce, dla sektorów I, II i III na rok 2026 –
+**252 komórki, zero rozbieżności**.
+
+**Wzorce znaków są dołączone do repozytorium** (`wzorce.npz`, ok. 60 kB). To istotne dla
+Dockera: w obrazie nie ma Arial Bold, a zamienniki (Liberation, Arimo) rysują cyfry
+inaczej i odczyt się sypie – „11, 25” było czytane jako „31, 26”. Plik wzorców odwiązuje
+wynik od czcionek zainstalowanych w systemie; sprawdzone, że z Arialem, z samym
+Liberation i bez żadnej czcionki wynik jest identyczny. Wzorce odtwarza się poleceniem:
+
+```bash
+python koma_parser.py --generuj-wzorce        # wymaga Arial Bold w systemie
+```
+
+Panel pozwala wybrać sektor, obejrzeć najbliższe odbiory i cały rok w tabeli, otworzyć
+źródłowy PDF, ponownie odczytać PDF-y (przycisk *Odczytaj PDF*) oraz wysłać terminy do
+Google Calendar. Terminy Jeziorowskich trafiają do **osobnego kalendarza**
+„Wywóz Śmieci (Jeziorowskie)”, więc nie mieszają się z warszawskimi.
+
+### Dane (lokalne, poza repozytorium)
+
+Katalog `data/` jest w `.gitignore` – harmonogramy **nie trafiają do repozytorium**.
+Trzeba je mieć lokalnie:
+
+```text
+data/jeziorowskie/
+├── sektor-1.json          # odczytany harmonogram
+├── sektor-2.json
+├── sektor-3.json
+└── pdf/
+    └── Harmonogram sektor N.pdf    # pliki źródłowe z KOMA
+```
+
+Wystarczy wrzucić PDF-y do `data/jeziorowskie/pdf/` i kliknąć **Odczytaj PDF** w panelu
+(albo wywołać `POST /api/jeziorowskie/reparse`) – pliki `sektor-*.json` wygenerują się same.
+Nazwa pliku musi zawierać numer sektora, np. `Harmonogram sektor 2.pdf`.
+
+Gdy katalogu nie ma, panel po prostu zgłasza brak danych – reszta aplikacji działa normalnie.
+Pobieranie harmonogramów wprost ze strony KOMA nie jest jeszcze zrobione.
 
 ---
 
@@ -50,22 +112,38 @@ Aby logowanie działało na Twoim serwerze, musisz poprawnie skonfigurować proj
 
 ## 🐳 Instalacja i Uruchomienie (Docker)
 
+Obraz budowany jest automatycznie przy każdym wrzuceniu zmian na gałąź `main`
+(GitHub Actions → `ghcr.io/kratagit/warsaw-waste-schedule-exporter:latest`),
+więc na serwerze nic się nie kompiluje – wystarczy pobrać gotowy obraz.
+
 ### 1. Pobranie kodu
 Zaloguj się na serwer i sklonuj repozytorium:
 ```bash
-git clone https://github.com/TWOJA_NAZWA/TWOJE_REPO.git waste_app
+git clone https://github.com/kratagit/warsaw-waste-schedule-exporter.git waste_app
 cd waste_app
 ```
 
 ### 2. Wgranie kluczy
-Prześlij plik `credentials.json` (pobrany w poprzednim kroku) do folderu `waste_app` na serwerze (np. przez SCP lub FileZilla).
-
-### 3. Uruchomienie kontenera
-Uruchom aplikację w tle. Flaga `--build` wymusi zbudowanie obrazu (instalację Chrome, Pythona i bibliotek).
+Prześlij plik `credentials.json` (pobrany w poprzednim kroku) do podkatalogu `data/`:
 
 ```bash
-docker compose up -d --build
+mkdir -p data
+# skopiuj credentials.json do waste_app/data/
 ```
+
+Cały stan aplikacji – klucze, token logowania, ostatni harmonogram i pliki
+Jeziorowskich – leży w `data/`, dzięki czemu przeżywa aktualizacje obrazu.
+
+### 3. Uruchomienie kontenera
+
+```bash
+docker compose up -d
+```
+
+Jeśli obraz jest prywatny, najpierw zaloguj się do rejestru
+(`docker login ghcr.io -u TWOJA_NAZWA`, hasło = token GitHuba z prawem
+`read:packages`). Chcesz budować lokalnie zamiast pobierać gotowy obraz?
+W `docker-compose.yml` zakomentuj `image:` i odkomentuj `build: .`.
 
 ### 4. Pierwsze logowanie
 Otwórz przeglądarkę i wejdź na adres (pamiętaj o `https` i `nip.io`!):
@@ -81,18 +159,19 @@ Otwórz przeglądarkę i wejdź na adres (pamiętaj o `https` i `nip.io`!):
 
 ## 🔄 Jak aktualizować aplikację?
 
-Gdy wprowadzisz zmiany w kodzie na komputerze i wyślesz je na GitHub (`git push`), wykonaj te komendy na serwerze:
+Po wrzuceniu zmian na `main` GitHub Actions sam buduje nowy obraz i publikuje go
+jako `:latest` (oraz `:sha-…` dla konkretnego commita). Postęp widać w zakładce
+**Actions**. Na serwerze wystarczy:
 
 ```bash
-# 1. Wejdź do folderu
 cd waste_app
-
-# 2. Pobierz zmiany
-git pull
-
-# 3. Przebuduj i zrestartuj kontener (zachowując dane logowania)
-docker compose up -d --build
+docker compose pull      # pobierz świeży obraz
+docker compose up -d     # zrestartuj kontener na nowym obrazie
 ```
+
+Dane z `data/` i `static/` są montowane wolumenami, więc logowanie do Google i
+pobrane harmonogramy zostają na miejscu. Wycofanie do wcześniejszej wersji:
+podmień w `docker-compose.yml` tag `:latest` na `:sha-<skrót commita>`.
 
 ---
 
