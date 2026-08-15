@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import datetime
 import pickle
@@ -69,6 +70,61 @@ progress_state = {
     "result": None
 }
 progress_lock = threading.Lock()
+
+#: Gdzie szukamy przegladarki na Windows. Chrome ma pierwszenstwo, ale gdy go
+#: nie ma, wystarczy Edge - to tez Chromium, wiec scraping dziala tak samo.
+CHROME_PATHS = [
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Google\Chrome\Application\chrome.exe"),
+]
+EDGE_PATHS = [
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+]
+
+
+def find_browser_binary(paths):
+    """Zwraca pierwsza istniejaca sciezke do przegladarki albo None."""
+    for p in paths:
+        if p and os.path.exists(p):
+            return p
+    return None
+
+
+def build_browser_options(options_class):
+    """Buduje te same opcje uruchomienia dla Chrome i dla Edge."""
+    o = options_class()
+    o.add_argument("--headless=new")
+    o.add_argument("--window-size=1920,1080")
+    o.add_argument("--log-level=3")
+    o.add_argument("--no-sandbox")
+    o.add_argument("--disable-dev-shm-usage")
+    o.add_argument("--disable-gpu")
+    prefs = {"download.default_directory": STATIC_DIR, "download.prompt_for_download": False, "plugins.always_open_pdf_externally": True}
+    o.add_experimental_option("prefs", prefs)
+    return o
+
+
+def safe_print(msg):
+    """Wypisuje komunikat tak, by polskie znaki nie wywrocily procesu.
+
+    Gdy stdout nie jest terminalem (przekierowanie do pliku, usluga w tle),
+    Windows koduje wyjscie w cp1252 i print z "BŁĄD" rzuca UnicodeEncodeError.
+    Taki wyjatek potrafil zabic watek w trakcie obslugi bledu i zostawic
+    aplikacje na zawsze w stanie "running" - z paskiem postepu, ktory nie rusza.
+    """
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        try:
+            kod = getattr(sys.stdout, "encoding", None) or "ascii"
+            print(msg.encode(kod, errors="replace").decode(kod, errors="replace"))
+        except Exception:
+            pass
+    except Exception:
+        pass
+
 
 def update_progress(percent, message, status="running"):
     with progress_lock:
@@ -273,7 +329,7 @@ def push_state_to_calendar(allowed_types):
 
     def log(msg):
         ts = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"[{ts}] {msg}")
+        safe_print(f"[{ts}] {msg}")
         results["logs"].append(f"[{ts}] {msg}")
 
     try:
@@ -324,7 +380,7 @@ def run_full_process(address, allowed_types, send_to_calendar=True):
     }
     def log(msg):
         ts = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"[{ts}] {msg}")
+        safe_print(f"[{ts}] {msg}")
         results["logs"].append(f"[{ts}] {msg}")
 
     try:
@@ -339,30 +395,44 @@ def run_full_process(address, allowed_types, send_to_calendar=True):
         update_progress(5, "Start przeglądarki...")
         log(f"--- START DLA: {address} ---")
         
-        chrome_options = Options()
-        chrome_options.add_argument("--headless=new")
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--log-level=3")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        
-        prefs = {"download.default_directory": STATIC_DIR, "download.prompt_for_download": False, "plugins.always_open_pdf_externally": True}
-        chrome_options.add_experimental_option("prefs", prefs)
-        
+        chrome_options = build_browser_options(Options)
+
         # --- ZMIANA: WARUNKOWE UŻYCIE STEROWNIKA ---
         # Na Dockerze (Linux) używamy systemowego. Na Windowsie - Webdriver Manager.
         if os.path.exists("/usr/bin/chromium") and os.path.exists("/usr/bin/chromedriver"):
             chrome_options.binary_location = "/usr/bin/chromium"
             service = Service("/usr/bin/chromedriver")
             log("Używam systemowego Chromium (Docker/Linux).")
+            driver = webdriver.Chrome(service=service, options=chrome_options)
         else:
-            # Importujemy tylko tutaj, żeby Docker nie wywalił błędu przy starcie
-            from webdriver_manager.chrome import ChromeDriverManager
-            service = Service(ChromeDriverManager().install())
-            log("Używam Webdriver Manager (Windows/Local).")
+            chrome_path = find_browser_binary(CHROME_PATHS)
+            edge_path = find_browser_binary(EDGE_PATHS)
+            if not chrome_path and not edge_path:
+                raise Exception(
+                    "Nie znaleziono przeglądarki. Zainstaluj Google Chrome "
+                    "(winget install Google.Chrome) albo Microsoft Edge."
+                )
 
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+            if chrome_path:
+                chrome_options.binary_location = chrome_path
+                # Importujemy tylko tutaj, żeby Docker nie wywalił błędu przy starcie
+                try:
+                    from webdriver_manager.chrome import ChromeDriverManager
+                    service = Service(ChromeDriverManager().install())
+                    log("Używam Chrome + Webdriver Manager (Windows/Local).")
+                    driver = webdriver.Chrome(service=service, options=chrome_options)
+                except ImportError:
+                    # Selenium 4.6+ samo pobiera sterownik (Selenium Manager)
+                    log("Brak webdriver-manager - używam wbudowanego Selenium Manager.")
+                    driver = webdriver.Chrome(options=chrome_options)
+            else:
+                # Edge jest oparty na Chromium, więc scraping działa tak samo,
+                # a na Windowsie jest dostępny bez instalowania czegokolwiek.
+                from selenium.webdriver.edge.options import Options as EdgeOptions
+                edge_options = build_browser_options(EdgeOptions)
+                edge_options.binary_location = edge_path
+                log("Nie znaleziono Chrome - używam Microsoft Edge.")
+                driver = webdriver.Edge(options=edge_options)
         log("Sterownik przeglądarki uruchomiony poprawnie.")
         
         schedule_data = [] 

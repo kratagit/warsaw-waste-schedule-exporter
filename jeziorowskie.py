@@ -18,7 +18,27 @@ import datetime
 import glob
 import json
 import os
+import sys
 import threading
+
+
+def _bezpieczny_print(msg: str) -> None:
+    """Wypisuje komunikat tak, by polskie znaki nie wywrocily watku.
+
+    Przy przekierowanym wyjsciu Windows koduje stdout w cp1252 i print
+    z polskimi znakami rzuca UnicodeEncodeError - a wyjatek w logowaniu
+    bledu zostawilby synchronizacje na zawsze w stanie "running".
+    """
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        try:
+            kod = getattr(sys.stdout, "encoding", None) or "ascii"
+            print(msg.encode(kod, errors="replace").decode(kod, errors="replace"))
+        except Exception:
+            pass
+    except Exception:
+        pass
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data", "jeziorowskie")
@@ -188,7 +208,7 @@ def synchronizuj(service, numer: int, dozwolone: list[str],
 
     def log(msg: str) -> None:
         ts = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"[{ts}][jeziorowskie] {msg}")
+        _bezpieczny_print(f"[{ts}][jeziorowskie] {msg}")
         wynik["logs"].append(f"[{ts}] {msg}")
 
     try:
