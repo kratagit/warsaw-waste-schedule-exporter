@@ -37,9 +37,12 @@ os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # Pozwala na logowanie bez HTTPS
 TARGET_URL = "https://warszawa19115.pl/harmonogramy-wywozu-odpadow"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 CALENDAR_NAME = "Wywóz Śmieci"
-CREDENTIALS_FILE = "credentials.json"
-TOKEN_FILE = "token.pickle"
-STATE_FILE = "last_state.json"
+# Sciezki plikow ze stanem mozna przestawic zmiennymi srodowiskowymi - w
+# kontenerze wskazujemy na /app/data, zeby przezyly aktualizacje obrazu.
+# Bez zmiennych zachowanie jest takie jak dotad (pliki obok app.py).
+CREDENTIALS_FILE = os.environ.get("CREDENTIALS_FILE", "credentials.json")
+TOKEN_FILE = os.environ.get("TOKEN_FILE", "token.pickle")
+STATE_FILE = os.environ.get("STATE_FILE", "last_state.json")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, 'static')

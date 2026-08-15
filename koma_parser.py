@@ -98,8 +98,47 @@ CYFRY = [str(c) for c in range(10)]
 MIN_MARGINES = 0.10
 
 
+#: Plik z wzorcami znakow, dolaczony do repozytorium. Uniezaleznia odczyt od
+#: czcionek zainstalowanych w systemie (patrz docstring klasy Rozpoznawacz).
+PLIK_WZORCOW = Path(__file__).with_name("wzorce.npz")
+
+
 class BladHarmonogramu(Exception):
     """Dokument nie ma oczekiwanej struktury."""
+
+
+def _potrzebne_napisy() -> list[str]:
+    """Wszystkie napisy, ktore program kiedykolwiek dopasowuje."""
+    napisy = [str(c) for c in range(10)]                  # pojedyncze cyfry
+    napisy += [str(d) for d in range(1, 32)]              # dni miesiaca
+    napisy += [str(r) for r in range(2020, 2041)]         # lata w naglowku
+    napisy += list(MIESIACE)                             # nazwy miesiecy
+    return sorted(set(napisy))
+
+
+def wczytaj_wzorce() -> dict[str, np.ndarray]:
+    """Wzorce z pliku obok modulu. Pusty slownik, gdy pliku nie ma."""
+    if not PLIK_WZORCOW.exists():
+        return {}
+    try:
+        with np.load(PLIK_WZORCOW) as dane:
+            if int(dane["wysokosc"]) != WYS_POROWNANIA:
+                return {}      # wzorce z innej skali - lepiej je zignorowac
+            return {k[2:]: dane[k].astype(np.float64) / 255.0
+                    for k in dane.files if k.startswith("w_")}
+    except Exception:
+        return {}
+
+
+def zapisz_wzorce(sciezka_czcionki: str | None = None) -> int:
+    """Renderuje wzorce z czcionki i zapisuje je do PLIK_WZORCOW."""
+    rozp = Rozpoznawacz(sciezka_czcionki or Rozpoznawacz._znajdz_czcionke())
+    do_zapisu = {"wysokosc": np.array(WYS_POROWNANIA)}
+    for napis in _potrzebne_napisy():
+        wzor = rozp._wzorzec(napis)
+        do_zapisu["w_" + napis] = np.clip(wzor * 255.0, 0, 255).astype(np.uint8)
+    np.savez_compressed(PLIK_WZORCOW, **do_zapisu)
+    return len(do_zapisu) - 1
 
 
 # ---------------------------------------------------------------------------
@@ -318,10 +357,16 @@ def plamy_w_komorce(jasnosc: np.ndarray, y0: int, y1: int, x0: int, x1: int):
 # ---------------------------------------------------------------------------
 
 class Rozpoznawacz:
-    """Dopasowuje wycinek obrazu do napisow wyrenderowanych z czcionki.
+    """Dopasowuje wycinek obrazu do wzorcow znakow.
 
-    Zadnego uczenia maszynowego: wzorce sa generowane z pliku czcionki,
-    normalizowane do wspolnej wysokosci i porownywane piksel w piksel.
+    Zadnego uczenia maszynowego: wzorce sa obrazami znakow znormalizowanymi do
+    wspolnej wysokosci i porownywanymi piksel w piksel.
+
+    Wzorce bierzemy z pliku `wzorce.npz` dolaczonego do repozytorium, a dopiero
+    gdy go nie ma - renderujemy z czcionki systemowej. Ma to znaczenie w
+    kontenerze: nie ma tam Arial Bold, a zamienniki (Liberation, Arimo) rysuja
+    cyfry inaczej i odczyt sie sypie - "11, 25" bylo czytane jako "31, 26".
+    Plik wzorcow odwiazuje wynik od tego, co jest zainstalowane w systemie.
     """
 
     #: Wzorce renderujemy duzo wieksze niz docelowe i zmniejszamy z
@@ -330,15 +375,21 @@ class Rozpoznawacz:
     RENDER_PX = 160
 
     def __init__(self, sciezka_czcionki: str | None = None):
-        self.sciezka = sciezka_czcionki or self._znajdz_czcionke()
-        self.font = ImageFont.truetype(self.sciezka, self.RENDER_PX)
+        # jawnie podana czcionka ma pierwszenstwo (przydatne do kalibracji)
+        self._wbudowane: dict[str, np.ndarray] = {} if sciezka_czcionki else wczytaj_wzorce()
+        self.sciezka = sciezka_czcionki or self._znajdz_czcionke(
+            wymagana=not self._wbudowane)
+        self.font = (ImageFont.truetype(self.sciezka, self.RENDER_PX)
+                     if self.sciezka else None)
         self._cache: dict[str, np.ndarray] = {}
 
     @staticmethod
-    def _znajdz_czcionke() -> str:
+    def _znajdz_czcionke(wymagana: bool = True) -> str | None:
         for kandydat in CZCIONKI:
             if Path(kandydat).exists():
                 return kandydat
+        if not wymagana:
+            return None
         raise BladHarmonogramu(
             "nie znaleziono pogrubionej czcionki bezszeryfowej (Arial Bold / "
             "Liberation Sans Bold) - wskaz ja opcja --czcionka"
@@ -371,6 +422,15 @@ class Rozpoznawacz:
         return np.asarray(obraz).astype(np.float64) / 255.0
 
     def _wzorzec(self, tekst: str) -> np.ndarray:
+        wbudowany = self._wbudowane.get(tekst)
+        if wbudowany is not None:
+            return wbudowany
+        if self.font is None:
+            raise BladHarmonogramu(
+                f"brak wzorca dla \"{tekst}\" i brak czcionki - uzupelnij "
+                f"wzorce.npz (python koma_parser.py --generuj-wzorce) albo "
+                f"wskaz czcionke opcja --czcionka"
+            )
         if tekst not in self._cache:
             pom = Image.new("L", (16, 16), 255)
             bbox = ImageDraw.Draw(pom).textbbox((0, 0), tekst, font=self.font)
@@ -741,12 +801,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Wyciaga harmonogram odbioru odpadow z PDF do JSON."
     )
-    parser.add_argument("pliki", nargs="+", help="pliki PDF (obsluguje wzorce *.pdf)")
+    parser.add_argument("pliki", nargs="*", help="pliki PDF (obsluguje wzorce *.pdf)")
     parser.add_argument("-o", "--out", help="zapisz wszystko do jednego pliku JSON")
     parser.add_argument("--raport", action="store_true",
                         help="wypisz tabele kontrolna na ekran")
     parser.add_argument("--czcionka", help="sciezka do pogrubionej czcionki .ttf")
+    parser.add_argument("--generuj-wzorce", action="store_true",
+                        help="zapisz wzorce znakow do wzorce.npz i zakoncz")
     args = parser.parse_args(argv)
+
+    if args.generuj_wzorce:
+        ile = zapisz_wzorce(args.czcionka)
+        print(f"zapisano {ile} wzorcow do {PLIK_WZORCOW.name}")
+        return 0
+
+    if not args.pliki:
+        parser.error("podaj plik PDF albo uzyj --generuj-wzorce")
 
     sciezki: list[Path] = []
     for wzorzec in args.pliki:
