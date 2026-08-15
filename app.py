@@ -573,6 +573,14 @@ threading.Thread(target=auto_scheduler, daemon=True).start()
 
 # --- ROUTES ---
 
+@app.after_request
+def bez_cache_html(odpowiedz):
+    """Strona nie ma byc cache'owana - inaczej po zmianach w interfejsie
+    przegladarka pokazuje stara wersje i wyglada to jakby nic sie nie stalo."""
+    if odpowiedz.mimetype == 'text/html':
+        odpowiedz.headers['Cache-Control'] = 'no-store, must-revalidate'
+    return odpowiedz
+
 @app.route('/')
 def home():
     return render_template('index.html')
