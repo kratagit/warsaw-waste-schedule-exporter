@@ -291,6 +291,12 @@
                         <span id="jezWarnMessage"></span>
                     </div>
 
+                    <!-- harmonogram jest wydawany na rok, wiec przypominamy o pobraniu nowego -->
+                    <div id="jezStaleAlert" class="hidden mb-6 bg-orange-50 dark:bg-orange-900/20 border-l-4 border-orange-500 text-orange-700 dark:text-orange-400 p-4 rounded text-sm relative z-10">
+                        <p class="font-bold mb-1"><i class="fas fa-calendar-xmark mr-2"></i>Harmonogram wymaga odświeżenia</p>
+                        <span id="jezStaleMessage"></span>
+                    </div>
+
                     <!-- Przyciski (układ jak w panelu Warszawy) -->
                     <div class="grid grid-cols-3 gap-4 relative z-10">
                         <!-- SYNCHRONIZACJA: pobiera PDF ze strony gminy i od razu go odczytuje -->
@@ -1019,6 +1025,21 @@
         document.getElementById('jezTitle').textContent = `${d.sektor} · ${d.rok}`;
         document.getElementById('jezSourceInfo').textContent = d.zrodlo_pdf || '-';
         document.getElementById('jezSectorInfo').textContent = d.wykaz || '';
+
+        // Harmonogram jest wydawany na jeden rok - gdy dane sa ze starego rocznika
+        // albo nie ma juz zadnego terminu przed nami, trzeba pobrac nowy.
+        const stale = document.getElementById('jezStaleAlert');
+        const rokTeraz = new Date().getFullYear();
+        let powod = '';
+        if (d.rok && d.rok < rokTeraz) {
+            powod = `Wczytane dane są z <b>${d.rok}</b> roku, a mamy <b>${rokTeraz}</b>. `
+                  + 'Kliknij <b>Synchronizuj</b>, aby pobrać aktualny harmonogram ze strony gminy.';
+        } else if (!d.liczba_nadchodzacych) {
+            powod = `W harmonogramie na <b>${d.rok}</b> nie ma już żadnego terminu przed nami. `
+                  + 'Jeśli gmina opublikowała plan na kolejny rok, kliknij <b>Synchronizuj</b>.';
+        }
+        stale.classList.toggle('hidden', !powod);
+        if (powod) document.getElementById('jezStaleMessage').innerHTML = powod;
 
         const warn = document.getElementById('jezWarnAlert');
         if (d.ostrzezenia && d.ostrzezenia.length) {

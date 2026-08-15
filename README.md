@@ -106,7 +106,16 @@ Aby logowanie działało na Twoim serwerze, musisz poprawnie skonfigurować proj
     ```
     *(Zamień `192.168.X.X` na IP swojego serwera w sieci lokalnej).*
 
-6.  Pobierz plik JSON, zmień jego nazwę na `credentials.json` i zachowaj go. **Nie wrzucaj go do repozytorium!**
+6.  Pobierz plik JSON, zmień jego nazwę na `credentials.json` i wgraj go na serwer do
+    katalogu **`waste_app/data/`** (tam szuka go kontener – patrz `CREDENTIALS_FILE`
+    w `docker-compose.yml`). **Nie wrzucaj go do repozytorium!** – katalog `data/`
+    jest w `.gitignore`.
+
+> **Adres musi się zgadzać co do znaku.** Aplikacja buduje adres powrotny z tego,
+> pod którym otworzysz stronę. Jeśli w konsoli Google wpiszesz
+> `https://192.168.0.10.nip.io:5000/oauth2callback`, to logowanie zadziała tylko
+> wtedy, gdy wejdziesz dokładnie na `https://192.168.0.10.nip.io:5000` – wejście
+> po samym IP skończy się błędem `redirect_uri_mismatch`.
 
 ---
 
@@ -131,8 +140,17 @@ mkdir -p data
 # skopiuj credentials.json do waste_app/data/
 ```
 
-Cały stan aplikacji – klucze, token logowania, ostatni harmonogram i pliki
-Jeziorowskich – leży w `data/`, dzięki czemu przeżywa aktualizacje obrazu.
+W `data/` leżą dwie różne rzeczy:
+
+*   **Nie do odtworzenia:** `credentials.json` i `token.pickle`. Ich utrata oznacza
+    ponowne logowanie do Google – to je warto backupować.
+*   **Odświeżalne:** harmonogram Jeziorowskich (`data/jeziorowskie/`) i `last_state.json`.
+    Harmonogram jest wydawany na jeden rok, więc i tak trzeba go co roku pobrać na nowo
+    przyciskiem **Synchronizuj**; skasowanie tych plików niczego trwale nie niszczy.
+
+Panel sam przypomina o odświeżeniu: gdy wczytane dane są ze starszego rocznika albo nie
+ma już żadnego terminu przed nami, nad przyciskami pojawia się ostrzeżenie
+„Harmonogram wymaga odświeżenia”.
 
 ### 3. Uruchomienie kontenera
 
