@@ -161,8 +161,8 @@ def _odbiory(dane: dict) -> list[dict]:
     return wynik
 
 
-def harmonogram(tylko_przyszle: bool = False) -> dict | None:
-    """Harmonogram sektora gotowy do wyswietlenia lub wyslania."""
+def harmonogram() -> dict | None:
+    """Caly harmonogram sektora - do wyswietlenia i do wyslania do kalendarza."""
     dane = wczytaj_dane()
     if not dane:
         return None
@@ -179,7 +179,7 @@ def harmonogram(tylko_przyszle: bool = False) -> dict | None:
         "wykaz": dane.get("wykaz"),
         "miejscowosci": dane.get("miejscowosci", []),
         "frakcje": [f for f in FRAKCJE if f["id"] in dostepne_id],
-        "odbiory": nadchodzace if tylko_przyszle else wszystkie,
+        "odbiory": wszystkie,
         "wg_miesiecy": dane.get("wg_miesiecy", []),
         "liczba_odbiorow": dane.get("liczba_odbiorow", len(wszystkie)),
         "liczba_nadchodzacych": len(nadchodzace),
@@ -218,11 +218,11 @@ def _znajdz_lub_utworz_kalendarz(service, log) -> str:
     return utworzony["id"]
 
 
-def synchronizuj(service, dozwolone: list[str], tylko_przyszle: bool = True) -> dict:
-    """Dodaje terminy do osobnego kalendarza Google."""
+def synchronizuj(service, dozwolone: list[str]) -> dict:
+    """Dodaje do osobnego kalendarza Google wszystkie terminy z harmonogramu."""
     wynik = {
         "status": "success", "logs": [], "added_events": 0, "skipped": 0,
-        "allowed_types": dozwolone, "tylko_przyszle": tylko_przyszle,
+        "allowed_types": dozwolone,
     }
 
     def log(msg: str) -> None:
@@ -232,7 +232,7 @@ def synchronizuj(service, dozwolone: list[str], tylko_przyszle: bool = True) -> 
 
     try:
         _ustaw_postep(5, "Wczytywanie harmonogramu...")
-        dane = harmonogram(tylko_przyszle=tylko_przyszle)
+        dane = harmonogram()      # caly rocznik, nie tylko nadchodzace
         if not dane:
             raise Exception("Brak danych harmonogramu - najpierw kliknij Synchronizuj")
         log(f"--- START: {dane['sektor']}, rok {dane['rok']} ---")
@@ -244,7 +244,7 @@ def synchronizuj(service, dozwolone: list[str], tylko_przyszle: bool = True) -> 
             if fr["id"] in dozwolone
         ]
         if not pozycje:
-            raise Exception("Brak terminów do dodania (sprawdź filtry i zakres dat)")
+            raise Exception("Brak terminów do dodania (sprawdź filtry frakcji)")
         log(f"Do dodania: {len(pozycje)} terminów.")
 
         _ustaw_postep(15, "Łączenie z Kalendarzem Google...")
@@ -306,15 +306,14 @@ def synchronizuj(service, dozwolone: list[str], tylko_przyszle: bool = True) -> 
     return wynik
 
 
-def uruchom_synchronizacje(service, dozwolone: list[str],
-                           tylko_przyszle: bool = True) -> None:
+def uruchom_synchronizacje(service, dozwolone: list[str]) -> None:
     """Startuje wysylke do kalendarza w tle."""
     with _progress_lock:
         _progress.update({"status": "running", "percent": 0,
                           "message": "Inicjalizacja...", "result": None})
     threading.Thread(
         target=synchronizuj,
-        args=(service, dozwolone, tylko_przyszle),
+        args=(service, dozwolone),
         daemon=True,
     ).start()
 

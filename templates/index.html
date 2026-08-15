@@ -214,21 +214,6 @@
             <!-- LEWA KOLUMNA -->
             <div class="lg:col-span-4 flex flex-col gap-6 fade-in">
 
-                <!-- Zakres dat -->
-                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 flex justify-between items-center flex-shrink-0 card-hover">
-                    <div>
-                        <div class="flex items-center mb-1">
-                            <i class="fas fa-hourglass-half text-blue-500 mr-3 text-lg"></i>
-                            <h2 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Zakres</h2>
-                        </div>
-                        <div id="jezRangeText" class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wide mt-1 ml-8">Tylko nadchodzące</div>
-                    </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" id="jezOnlyUpcoming" class="sr-only peer" checked onchange="toggleJezRange()">
-                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
-                </div>
-
                 <!-- Filtry frakcji (bez flex-grow - karta ma byc wysoka na tyle,
                      ile zajmuja frakcje, a nie na cala kolumne) -->
                 <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden flex flex-col flex-shrink-0 card-hover">
@@ -1063,25 +1048,13 @@
     function updateJezCount() {
         if (!jezCurrent) return;
         const dozwolone = jezWybraneFrakcje();
-        const tylkoPrzyszle = document.getElementById('jezOnlyUpcoming').checked;
-        const dzis = new Date().toISOString().slice(0, 10);
         let ile = 0;
         jezCurrent.odbiory.forEach(o => {
-            if (tylkoPrzyszle && o.data < dzis) return;
             o.frakcje.forEach(f => { if (dozwolone.includes(f.id)) ile++; });
         });
         document.getElementById('jezCount').textContent = ile;
     }
 
-    function toggleJezRange() {
-        const on = document.getElementById('jezOnlyUpcoming').checked;
-        const t = document.getElementById('jezRangeText');
-        t.textContent = on ? 'Tylko nadchodzące' : 'Cały rok';
-        t.className = on
-            ? "text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wide mt-1 ml-8"
-            : "text-[10px] font-bold text-gray-400 uppercase tracking-wide mt-1 ml-8";
-        updateJezCount();
-    }
 
     const MIESIACE_DOPELNIACZ = ['stycznia','lutego','marca','kwietnia','maja','czerwca',
                                  'lipca','sierpnia','września','października','listopada','grudnia'];
@@ -1291,10 +1264,7 @@
             const res = await fetch('/api/jeziorowskie/sync', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    allowedTypes: dozwolone,
-                    onlyUpcoming: document.getElementById('jezOnlyUpcoming').checked
-                })
+                body: JSON.stringify({ allowedTypes: dozwolone })
             });
             const data = await res.json();
             if (data.status === 'started') startJezPolling();
