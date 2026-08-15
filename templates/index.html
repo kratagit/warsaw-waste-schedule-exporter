@@ -237,7 +237,9 @@
                             <h2 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Filtry</h2>
                         </div>
                     </div>
-                    <div id="jezFilters" class="p-6 flex flex-col justify-between flex-grow h-full space-y-1"></div>
+                    <!-- bez justify-between: pozycje maja isc jedna pod druga od gory,
+                         inaczej rozjezdzaja sie na cala wysokosc kolumny -->
+                    <div id="jezFilters" class="p-6 flex flex-col gap-1"></div>
                 </div>
             </div>
 
