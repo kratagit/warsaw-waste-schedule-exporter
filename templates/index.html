@@ -286,13 +286,22 @@
                         <span id="jezWarnMessage"></span>
                     </div>
 
-                    <!-- Przyciski -->
-                    <div class="grid grid-cols-3 gap-4 relative z-10">
+                    <!-- Przyciski (układ jak w panelu Warszawy) -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10">
+                        <!-- POBRANIE HARMONOGRAMU ZE STRONY KOMA (jeszcze niedostępne) -->
                         <button id="jezRunBtn" onclick="handleJezMainButton()"
-                                class="col-span-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
+                                class="col-span-2 md:col-span-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
                             <i class="fas fa-circle-notch fa-spin hidden" id="jezBtnSpinner"></i>
-                            <span id="jezBtnIcon"><i class="fas fa-calendar-plus text-lg"></i></span>
-                            <span id="jezBtnText">Dodaj do Kalendarza Google</span>
+                            <span id="jezBtnIcon"><i class="fas fa-sync-alt text-lg group-hover:rotate-180 transition-transform duration-700"></i></span>
+                            <span id="jezBtnText">Synchronizuj</span>
+                        </button>
+
+                        <!-- WYSYŁKA TERMINÓW DO KALENDARZA GOOGLE -->
+                        <button id="jezCalBtn" onclick="handleJezCalendarButton()"
+                                class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 py-3 rounded-lg transition-all flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
+                            <i class="fas fa-circle-notch fa-spin hidden" id="jezCalSpinner"></i>
+                            <i id="jezCalIcon" class="fas fa-calendar-plus text-emerald-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
+                            <span id="jezCalText">Do kalendarza</span>
                         </button>
 
                         <button id="jezPdfBtn" onclick="openJezPdf()"
@@ -1119,39 +1128,48 @@
 
     // --- synchronizacja z Kalendarzem Google ---
 
-    function updateJezButton() {
-        const btn = document.getElementById('jezRunBtn');
-        const ikona = document.getElementById('jezBtnIcon');
-        const tekst = document.getElementById('jezBtnText');
-        if (!btn || !ikona || !tekst) return;
+    // Duzy przycisk: pobranie harmonogramu wprost ze strony KOMA.
+    // Jeszcze niezrobione - na razie tlumaczy, skad biora sie dane.
+    function handleJezMainButton() {
+        const ok = document.getElementById('jezOkAlert');
+        document.getElementById('jezErrorAlert').classList.add('hidden');
+        ok.classList.remove('hidden');
+        document.getElementById('jezOkMessage').innerHTML =
+            '<b>Pobieranie ze strony KOMA nie jest jeszcze zrobione.</b> '
+            + 'Dane pochodzą z plików PDF w <code>data/jeziorowskie/pdf</code> — '
+            + 'żeby je odświeżyć, podmień pliki i kliknij <b>Odczytaj PDF</b>.';
+    }
 
-        btn.className = "col-span-3 font-bold py-4 px-6 rounded-lg shadow-lg transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group";
+    // Przycisk "Do kalendarza" - tak samo jak w panelu Warszawy.
+    function updateJezButton() {
+        const ikona = document.getElementById('jezCalIcon');
+        const tekst = document.getElementById('jezCalText');
+        if (!ikona || !tekst) return;
+
         if (isAuthenticated) {
-            btn.classList.add('bg-gradient-to-r', 'from-emerald-600', 'to-teal-600', 'hover:from-emerald-500', 'hover:to-teal-500', 'text-white', 'shadow-emerald-500/20');
-            ikona.innerHTML = '<i class="fas fa-calendar-plus text-lg"></i>';
-            tekst.textContent = 'Dodaj do Kalendarza Google';
+            ikona.className = 'fas fa-calendar-plus text-emerald-500 text-lg group-hover:scale-110 transition-transform duration-300';
+            tekst.textContent = 'Do kalendarza';
         } else {
-            btn.classList.add('bg-blue-600', 'hover:bg-blue-700', 'text-white', 'shadow-blue-500/30');
-            ikona.innerHTML = '<i class="fab fa-google text-lg"></i>';
-            tekst.textContent = 'Połącz z Google Calendar';
+            ikona.className = 'fab fa-google text-blue-500 text-lg group-hover:scale-110 transition-transform duration-300';
+            tekst.textContent = 'Połącz z Google';
         }
     }
 
-    function handleJezMainButton() {
+    function handleJezCalendarButton() {
         if (!isAuthenticated) { window.location.href = '/login'; return; }
         runJezSync();
     }
 
     async function runJezSync() {
-        if (!jezCurrent) { alert('Najpierw wybierz sektor.'); return; }
+        if (!jezCurrent) { alert('Brak wczytanego harmonogramu.'); return; }
         const dozwolone = jezWybraneFrakcje();
         if (!dozwolone.length) { alert('Zaznacz przynajmniej jedną frakcję.'); return; }
 
-        const btn = document.getElementById('jezRunBtn');
+        const btn = document.getElementById('jezCalBtn');
         btn.disabled = true;
         btn.classList.add('opacity-75', 'cursor-not-allowed');
-        document.getElementById('jezBtnSpinner').classList.remove('hidden');
-        document.getElementById('jezBtnIcon').classList.add('hidden');
+        document.getElementById('jezCalSpinner').classList.remove('hidden');
+        document.getElementById('jezCalIcon').classList.add('hidden');
         document.getElementById('jezErrorAlert').classList.add('hidden');
         document.getElementById('jezOkAlert').classList.add('hidden');
 
@@ -1176,11 +1194,12 @@
     }
 
     function resetJezBtn() {
-        const btn = document.getElementById('jezRunBtn');
+        const btn = document.getElementById('jezCalBtn');
+        if (!btn) return;
         btn.disabled = false;
         btn.classList.remove('opacity-75', 'cursor-not-allowed');
-        document.getElementById('jezBtnSpinner').classList.add('hidden');
-        document.getElementById('jezBtnIcon').classList.remove('hidden');
+        document.getElementById('jezCalSpinner').classList.add('hidden');
+        document.getElementById('jezCalIcon').classList.remove('hidden');
     }
 
     function startJezPolling() {
@@ -1223,9 +1242,9 @@
             const res = await fetch('/api/jeziorowskie/progress');
             const st = await res.json();
             if (st.status === 'running') {
-                document.getElementById('jezRunBtn').disabled = true;
-                document.getElementById('jezBtnSpinner').classList.remove('hidden');
-                document.getElementById('jezBtnIcon').classList.add('hidden');
+                document.getElementById('jezCalBtn').disabled = true;
+                document.getElementById('jezCalSpinner').classList.remove('hidden');
+                document.getElementById('jezCalIcon').classList.add('hidden');
                 startJezPolling();
             }
         } catch (e) {}
