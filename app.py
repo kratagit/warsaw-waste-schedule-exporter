@@ -691,6 +691,19 @@ def jez_pdf(numer):
         return jsonify({"status": "error", "message": "Brak pliku PDF"}), 404
     return send_from_directory(os.path.dirname(sciezka), os.path.basename(sciezka))
 
+@app.route('/api/jeziorowskie/fetch', methods=['POST'])
+def jez_fetch():
+    """Pobiera harmonogram(y) ze strony gminy i od razu je odczytuje."""
+    if jeziorowskie.czy_trwa():
+        return jsonify({"status": "error", "message": "Proces trwa"})
+    body = request.json or {}
+    numery = body.get('sectors')
+    if not numery:
+        numer = body.get('sector')
+        numery = [int(numer)] if numer is not None else sorted(jeziorowskie.STRONY_SEKTOROW)
+    jeziorowskie.uruchom_pobieranie([int(n) for n in numery])
+    return jsonify({"status": "started"})
+
 @app.route('/api/jeziorowskie/reparse', methods=['POST'])
 def jez_reparse():
     """Ponownie czyta lokalne PDF-y i odswieza dane (bez internetu)."""

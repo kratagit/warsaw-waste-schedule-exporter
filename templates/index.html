@@ -1164,9 +1164,7 @@
 
     // --- synchronizacja z Kalendarzem Google ---
 
-    // Duzy przycisk. Docelowo: pobierze PDF ze strony KOMA i od razu go odczyta.
-    // Krok pobierania jeszcze nie istnieje, wiec na razie wykonuje sama druga
-    // czesc - przepuszcza pliki z data/jeziorowskie/pdf przez parser.
+    // Duzy przycisk: pobiera PDF ze strony gminy i od razu go odczytuje.
     async function handleJezMainButton() {
         const btn = document.getElementById('jezRunBtn');
         const ok = document.getElementById('jezOkAlert');
@@ -1180,32 +1178,28 @@
         document.getElementById('jezBtnIcon').classList.add('hidden');
 
         try {
-            const res = await fetch('/api/jeziorowskie/reparse', { method: 'POST' });
+            const res = await fetch('/api/jeziorowskie/fetch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sector: JEZ_SEKTOR })
+            });
             const d = await res.json();
-            if (d.status === 'error' && !(d.przetworzone || []).length) {
-                throw new Error((d.bledy || []).join('; ') || 'Nie udało się odczytać PDF-ów');
-            }
-
-            jezLogs = (d.przetworzone || []).map(p =>
-                `${p.plik} -> ${p.sektor} (${p.rok}), ${p.liczba_odbiorow} terminów` +
-                (p.ostrzezenia && p.ostrzezenia.length ? `, ostrzeżeń: ${p.ostrzezenia.length}` : ''));
-            (d.bledy || []).forEach(b => jezLogs.push('BŁĄD: ' + b));
-
-            await initJeziorowskie();
-            ok.classList.remove('hidden');
-            document.getElementById('jezOkMessage').innerHTML =
-                `<b>Odczytano ${(d.przetworzone || []).length} PDF-ów.</b> `
-                + 'Pobieranie plików wprost ze strony KOMA dojdzie w kolejnym kroku — '
-                + 'na razie źródłem są pliki w <code>data/jeziorowskie/pdf</code>.';
+            if (d.status !== 'started') throw new Error(d.message || 'Nie udało się uruchomić');
+            startJezPolling(true);
         } catch (e) {
+            resetJezRunBtn();
             err.classList.remove('hidden');
             document.getElementById('jezErrorMessage').textContent = e.message;
-        } finally {
-            btn.disabled = false;
-            btn.classList.remove('opacity-75', 'cursor-not-allowed');
-            document.getElementById('jezBtnSpinner').classList.add('hidden');
-            document.getElementById('jezBtnIcon').classList.remove('hidden');
         }
+    }
+
+    function resetJezRunBtn() {
+        const btn = document.getElementById('jezRunBtn');
+        if (!btn) return;
+        btn.disabled = false;
+        btn.classList.remove('opacity-75', 'cursor-not-allowed');
+        document.getElementById('jezBtnSpinner').classList.add('hidden');
+        document.getElementById('jezBtnIcon').classList.remove('hidden');
     }
 
     // Przycisk "Do kalendarza" - tak samo jak w panelu Warszawy.
@@ -1270,7 +1264,7 @@
         document.getElementById('jezCalIcon').classList.remove('hidden');
     }
 
-    function startJezPolling() {
+    function startJezPolling(pobieranie) {
         const box = document.getElementById('jezProgressContainer');
         box.classList.remove('hidden');
         if (jezPolling) clearInterval(jezPolling);
@@ -1286,11 +1280,22 @@
                 if (st.status === 'finished' || st.status === 'error') {
                     clearInterval(jezPolling);
                     resetJezBtn();
+                    resetJezRunBtn();
                     if (st.result) jezLogs = st.result.logs || [];
 
                     if (st.status === 'error') {
                         document.getElementById('jezErrorAlert').classList.remove('hidden');
                         document.getElementById('jezErrorMessage').textContent = st.message;
+                    } else if (pobieranie) {
+                        const r = st.result || {};
+                        const pobrane = r.pobrane || [];
+                        await initJeziorowskie();
+                        document.getElementById('jezOkAlert').classList.remove('hidden');
+                        document.getElementById('jezOkMessage').innerHTML =
+                            `<b>Pobrano ze strony gminy.</b> ` +
+                            pobrane.map(p => `${p.sektor} (${p.rok}): ${p.liczba_odbiorow} terminów`).join(', ') +
+                            ((r.bledy || []).length ? ` · błędy: ${r.bledy.join('; ')}` : '');
+                        setTimeout(() => box.classList.add('hidden'), 5000);
                     } else {
                         const r = st.result || {};
                         document.getElementById('jezOkAlert').classList.remove('hidden');

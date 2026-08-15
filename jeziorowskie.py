@@ -18,8 +18,13 @@ import datetime
 import glob
 import json
 import os
+import re
 import sys
 import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 
 
 def _bezpieczny_print(msg: str) -> None:
@@ -46,6 +51,33 @@ PDF_DIR = os.path.join(DATA_DIR, "pdf")
 
 #: Osobny kalendarz - synchronizacja nie miesza sie z warszawska.
 CALENDAR_NAME = "Wywóz Śmieci (Jeziorowskie)"
+
+# --- pobieranie harmonogramow ze strony gminy ---
+
+SERWIS = "https://stare-juchy.pl/"
+
+#: Podstrony sektorow w serwisie gminy Stare Juchy.
+STRONY_SEKTOROW = {
+    1: SERWIS + "sektor-i-rogale-rogalik-skomack-wielki-skomack-osada-krolowa-wola-gorlo-zawady-elckie-gorlowko-orzechowo-szczecinowo-nowe-krzywe-plowce-lasmiady.html",
+    2: SERWIS + "sektor-ii-liski-jeziorowskie-balamutowo-sikory-juskie-czerwonka-grabnik-grabnik-osada-olszewo-kaltki-panistruga.html",
+    3: SERWIS + "sektor-iii-stare-juchy-stare-juchy-spoldzielnie-mieszkaniowe-i-wspolnoty-mieszkaniowe.html",
+}
+
+#: Serwis odrzuca zadania ze skroconym User-Agentem (HTTP 403), wiec podajemy
+#: pelny naglowek przegladarki.
+NAGLOWKI = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "pl-PL,pl;q=0.9",
+}
+
+#: Serwis potrafi odciac klienta po serii zapytan, wiec nie pozwalamy odpytywac
+#: go czesciej niz co tyle sekund ani pobierac sektorow bez przerwy.
+MIN_ODSTEP_SYNCHRONIZACJI = 60
+ODSTEP_MIEDZY_SEKTORAMI = 2.0
+
+_ostatnia_synchronizacja = 0.0
 
 #: Kolejnosc, nazwy, ikony i kolory wydarzen w Kalendarzu Google.
 #: colorId Google: 3=Grape, 4=Flamingo, 5=Banana, 6=Tangerine, 7=Peacock,
@@ -300,7 +332,163 @@ def uruchom_synchronizacje(service, numer: int, dozwolone: list[str],
     ).start()
 
 
-# --- ponowne przetworzenie PDF-ow (most do przyszlego pobierania ze strony) ---
+# --- pobieranie PDF-ow ze strony gminy ---
+
+def _pobierz_bajty(url: str, timeout: int = 30) -> bytes:
+    """Zwykle zadanie HTTP z naglowkami przegladarki (bez Selenium)."""
+    zadanie = urllib.request.Request(url, headers=NAGLOWKI)
+    try:
+        with urllib.request.urlopen(zadanie, timeout=timeout) as odp:
+            return odp.read()
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            raise Exception(
+                f"Serwis odrzucił żądanie (HTTP 403). Strona gminy potrafi "
+                f"blokować po serii zapytań - spróbuj za kilkanaście minut."
+            ) from e
+        raise Exception(f"Błąd HTTP {e.code} przy pobieraniu {url}") from e
+    except urllib.error.URLError as e:
+        raise Exception(f"Brak połączenia ze stroną gminy ({e.reason})") from e
+
+
+def znajdz_link_pdf(html: str, numer: int) -> str | None:
+    """Wyszukuje w kodzie strony adres pliku PDF z harmonogramem.
+
+    Adres zawiera zmienny numer (np. .../324_harmonogram-sektor-2.pdf), ktory
+    zmienia sie przy kazdej aktualizacji harmonogramu, dlatego czytamy go ze
+    strony zamiast zapisywac na sztywno.
+    """
+    kandydaci = sorted(set(re.findall(r"files/file_add/download/[^\"'\s>]+?\.pdf", html)))
+    if not kandydaci:
+        return None
+
+    # preferujemy plik, ktorego nazwa wskazuje na wlasciwy sektor
+    rzymskie = {1: "i", 2: "ii", 3: "iii"}.get(numer, "")
+    for k in kandydaci:
+        nazwa = k.rsplit("/", 1)[-1].lower()
+        if f"sektor-{numer}" in nazwa or (rzymskie and f"sektor-{rzymskie}-" in nazwa):
+            return urllib.parse.urljoin(SERWIS, k)
+
+    # Bez dopasowania bierzemy plik tylko wtedy, gdy jest jedyny na stronie -
+    # inaczej moglibysmy zapisac harmonogram innego sektora pod zla nazwa.
+    if len(kandydaci) == 1:
+        return urllib.parse.urljoin(SERWIS, kandydaci[0])
+    return None
+
+
+def pobierz_pdf_sektora(numer: int, log) -> str:
+    """Pobiera ze strony gminy PDF danego sektora. Zwraca sciezke do pliku."""
+    strona = STRONY_SEKTOROW.get(numer)
+    if not strona:
+        raise Exception(f"Nie znam adresu strony dla sektora {numer}")
+
+    log(f"Pobieram stronę sektora {numer}...")
+    html = _pobierz_bajty(strona).decode("utf-8", errors="replace")
+
+    link = znajdz_link_pdf(html, numer)
+    if not link:
+        raise Exception(f"Nie znalazłem odnośnika do PDF na stronie sektora {numer}")
+    log(f"Znaleziono plik: {link.rsplit('/', 1)[-1]}")
+
+    dane = _pobierz_bajty(link, timeout=60)
+    if not dane.startswith(b"%PDF"):
+        raise Exception("Pobrany plik nie jest dokumentem PDF")
+
+    os.makedirs(PDF_DIR, exist_ok=True)
+    # nazwe nadajemy sami - zgodna z tym, czego szuka sciezka_pdf()
+    cel = os.path.join(PDF_DIR, f"Harmonogram sektor {numer}.pdf")
+    with open(cel, "wb") as f:
+        f.write(dane)
+    log(f"Zapisano {os.path.basename(cel)} ({len(dane) // 1024} kB)")
+    return cel
+
+
+def pobierz_i_przetworz(numery: list[int]) -> dict:
+    """Pobiera harmonogramy ze strony gminy i od razu je odczytuje."""
+    global _ostatnia_synchronizacja
+    wynik = {"status": "success", "logs": [], "pobrane": [], "bledy": []}
+
+    def log(msg: str) -> None:
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        _bezpieczny_print(f"[{ts}][jeziorowskie] {msg}")
+        wynik["logs"].append(f"[{ts}] {msg}")
+
+    try:
+        odstep = time.monotonic() - _ostatnia_synchronizacja
+        if _ostatnia_synchronizacja and odstep < MIN_ODSTEP_SYNCHRONIZACJI:
+            raise Exception(
+                f"Odczekaj {int(MIN_ODSTEP_SYNCHRONIZACJI - odstep)} s - "
+                f"strona gminy blokuje zbyt częste zapytania."
+            )
+        _ostatnia_synchronizacja = time.monotonic()
+
+        import koma_parser
+        rozpoznawacz = koma_parser.Rozpoznawacz()
+        from pathlib import Path
+
+        for i, numer in enumerate(numery):
+            _ustaw_postep(10 + int(i / len(numery) * 60),
+                          f"Pobieranie sektora {numer}...")
+            if i:
+                time.sleep(ODSTEP_MIEDZY_SEKTORAMI)
+            try:
+                sciezka = pobierz_pdf_sektora(numer, log)
+            except Exception as e:
+                log(f"BŁĄD (sektor {numer}): {e}")
+                wynik["bledy"].append(f"sektor {numer}: {e}")
+                continue
+
+            _ustaw_postep(10 + int((i + 0.5) / len(numery) * 60),
+                          f"Odczytywanie sektora {numer}...")
+            dane = koma_parser.przetworz(Path(sciezka), rozpoznawacz)
+            rozpoznany = dane.get("numer_sektora")
+            if rozpoznany is None:
+                raise Exception("Nie rozpoznano numeru sektora w pobranym PDF")
+            if rozpoznany != numer:
+                # numer sektora bierzemy z tresci dokumentu, wiec poprawiamy tez
+                # nazwe pliku, zeby nie rozjechala sie z zawartoscia
+                log(f"Uwaga: pobrany plik to sektor {rozpoznany}, a nie {numer}.")
+                wlasciwa = os.path.join(PDF_DIR, f"Harmonogram sektor {rozpoznany}.pdf")
+                if os.path.abspath(wlasciwa) != os.path.abspath(sciezka):
+                    os.replace(sciezka, wlasciwa)
+            with open(os.path.join(DATA_DIR, f"sektor-{rozpoznany}.json"),
+                      "w", encoding="utf-8") as f:
+                json.dump(dane, f, ensure_ascii=False, indent=2)
+            log(f"Odczytano: {dane.get('sektor')} {dane.get('rok')}, "
+                f"{dane.get('liczba_odbiorow')} terminów"
+                + (f", ostrzeżeń: {len(dane.get('ostrzezenia', []))}"
+                   if dane.get("ostrzezenia") else ""))
+            wynik["pobrane"].append({
+                "sektor": dane.get("sektor"),
+                "numer": rozpoznany,
+                "rok": dane.get("rok"),
+                "liczba_odbiorow": dane.get("liczba_odbiorow"),
+                "ostrzezenia": dane.get("ostrzezenia", []),
+            })
+
+        if wynik["bledy"] and not wynik["pobrane"]:
+            raise Exception("; ".join(wynik["bledy"]))
+
+        _ustaw_postep(100, "Zakończono pomyślnie!", status="finished")
+        with _progress_lock:
+            _progress["result"] = wynik
+    except Exception as e:
+        wynik["status"] = "error"
+        wynik["message"] = str(e)
+        with _progress_lock:
+            _progress.update({"status": "error", "message": str(e), "result": wynik})
+    return wynik
+
+
+def uruchom_pobieranie(numery: list[int]) -> None:
+    """Startuje pobieranie w tle (postep czytany przez `stan_postepu`)."""
+    with _progress_lock:
+        _progress.update({"status": "running", "percent": 0,
+                          "message": "Łączenie ze stroną gminy...", "result": None})
+    threading.Thread(target=pobierz_i_przetworz, args=(numery,), daemon=True).start()
+
+
+# --- ponowne przetworzenie PDF-ow (bez internetu) ---
 
 def przetworz_pdfy() -> dict:
     """Czyta ponownie PDF-y z data/jeziorowskie/pdf i odswieza pliki JSON."""
