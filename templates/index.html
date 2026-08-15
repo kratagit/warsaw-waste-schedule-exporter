@@ -209,36 +209,17 @@
 
     <!-- WIDOK: JEZIOROWSKIE (gmina Stare Juchy, dane z PDF-ów KOMA) -->
     <div id="viewJeziorowskie" class="hidden">
-        <div class="grid lg:grid-cols-12 gap-6 items-stretch">
-
-            <!-- LEWA KOLUMNA -->
-            <div class="lg:col-span-4 flex flex-col gap-6 fade-in">
-
-                <!-- Filtry frakcji (bez flex-grow - karta ma byc wysoka na tyle,
-                     ile zajmuja frakcje, a nie na cala kolumne) -->
-                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden flex flex-col flex-shrink-0 card-hover">
-                    <div class="p-6 border-b border-gray-100 dark:border-slate-700">
-                        <div class="flex items-center">
-                            <i class="fas fa-sliders-h text-blue-500 mr-3 text-lg"></i>
-                            <h2 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Filtry</h2>
-                        </div>
-                    </div>
-                    <!-- bez justify-between: pozycje maja isc jedna pod druga od gory,
-                         inaczej rozjezdzaja sie na cala wysokosc kolumny -->
-                    <div id="jezFilters" class="p-6 flex flex-col gap-1"></div>
-                </div>
-            </div>
-
-            <!-- PRAWA KOLUMNA -->
-            <div class="lg:col-span-8 flex flex-col gap-6 fade-in">
+        <!-- Sekcje ida jedna pod druga na calej szerokosci. Panel ma tylko jedna
+             karte ustawien (filtry), wiec podzial na kolumny zostawial pustke. -->
+        <div class="flex flex-col gap-6 fade-in">
 
                 <!-- PANEL STEROWANIA -->
-                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 flex-shrink-0 card-hover relative overflow-hidden">
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 flex-shrink-0 card-hover relative overflow-hidden">
                     <div class="absolute top-0 right-0 -mt-10 -mr-10 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 pb-4 border-b border-gray-100 dark:border-slate-700 gap-4 relative z-10">
-                        <div class="w-full sm:w-auto">
-                            <div class="flex items-center gap-3 mb-1">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-4 sm:mb-6 pb-4 border-b border-gray-100 dark:border-slate-700 gap-3 sm:gap-4 relative z-10">
+                        <div class="w-full sm:w-auto min-w-0">
+                            <div class="flex items-center gap-2 sm:gap-3 mb-1 flex-wrap">
                                 <h3 id="jezTitle" class="text-xl font-bold text-gray-800 dark:text-white">Harmonogram KOMA</h3>
                                 <!-- adres ustawiany z /api/jeziorowskie/config - ta sama strona,
                                      z ktorej pobierany jest PDF -->
@@ -249,7 +230,7 @@
                                 </a>
                             </div>
                             <p class="text-sm text-gray-500 dark:text-gray-400">Dane z PDF: <span id="jezSourceInfo" class="font-mono text-emerald-500 font-bold">-</span></p>
-                            <p id="jezSectorInfo" class="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-2xl leading-relaxed"></p>
+                            <p id="jezSectorInfo" class="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-2xl leading-relaxed break-words"></p>
                         </div>
                         <div class="text-right flex items-center gap-4 sm:block">
                             <p class="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wide">Terminów w roku</p>
@@ -314,22 +295,32 @@
                     </div>
                 </div>
 
+                <!-- FILTRY (poziomy pasek - lepiej wykorzystuje szerokosc i mniej
+                     zajmuje na telefonie niz lista w bocznej kolumnie) -->
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6">
+                    <div class="flex items-center mb-4">
+                        <i class="fas fa-sliders-h text-blue-500 mr-3 text-lg"></i>
+                        <h2 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Filtry</h2>
+                        <span class="ml-auto text-[11px] text-gray-400">kliknij, aby wyłączyć frakcję</span>
+                    </div>
+                    <div id="jezFilters" class="flex flex-wrap gap-2"></div>
+                </div>
+
                 <!-- NAJBLIŻSZE ODBIORY -->
-                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-                    <h3 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider mb-6 flex items-center border-b border-gray-100 dark:border-slate-700 pb-4">
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6">
+                    <h3 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider mb-4 sm:mb-6 flex items-center border-b border-gray-100 dark:border-slate-700 pb-4">
                         <i class="far fa-calendar-alt mr-2 text-lg text-emerald-500"></i> Najbliższe odbiory
                     </h3>
-                    <div id="jezUpcoming" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+                    <div id="jezUpcoming" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4"></div>
                 </div>
 
                 <!-- HARMONOGRAM ROCZNY -->
-                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 flex-grow">
-                    <h3 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider mb-6 flex items-center border-b border-gray-100 dark:border-slate-700 pb-4">
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6">
+                    <h3 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider mb-4 sm:mb-6 flex items-center border-b border-gray-100 dark:border-slate-700 pb-4">
                         <i class="fas fa-table mr-2 text-lg text-blue-500"></i> Harmonogram roczny
                     </h3>
                     <div id="jezYearTable" class="overflow-x-auto"></div>
                 </div>
-            </div>
         </div>
     </div>
 
@@ -968,19 +959,23 @@
         localStorage.setItem('jezSyncPrefs', JSON.stringify(jezPrefs));
     }
 
+    // Filtry jako "chipy" - zajmuja jeden pasek zamiast wysokiej listy i dobrze
+    // zawijaja sie na waskim ekranie.
     function renderJezFilters() {
         const c = document.getElementById('jezFilters');
         c.innerHTML = '';
         jezFractions.forEach(f => {
-            const label = document.createElement('label');
-            label.className = "flex items-center space-x-3 p-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition group";
-            label.innerHTML = `
-                <input type="checkbox" class="peer w-5 h-5 text-emerald-600 rounded border-gray-300 dark:border-slate-600 focus:ring-emerald-500 dark:bg-slate-800 transition-all"
-                    ${jezPrefs[f.id] ? 'checked' : ''} onchange="toggleJezPref('${f.id}', this.checked)">
-                <span class="text-sm font-medium text-gray-700 dark:text-gray-200 select-none flex-grow group-hover:text-gray-900 dark:group-hover:text-white transition-colors">${f.nazwa}</span>
-                <i class="${f.icon} text-gray-400 dark:text-slate-500 text-sm group-hover:text-emerald-500 transition-colors"></i>
-            `;
-            c.appendChild(label);
+            const wl = jezPrefs[f.id];
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.onclick = () => toggleJezPref(f.id, !jezPrefs[f.id]);
+            btn.className = "inline-flex items-center gap-2 pl-3 pr-3 py-2 rounded-full border text-xs font-bold transition-all select-none " + (wl
+                ? "bg-emerald-50 dark:bg-emerald-900/30 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300"
+                : "bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-slate-700 text-gray-400 dark:text-slate-500 line-through");
+            btn.innerHTML = `<i class="${f.icon}"></i><span>${f.nazwa}</span>`
+                + (wl ? '<i class="fas fa-check text-[10px] opacity-70"></i>'
+                      : '<i class="fas fa-xmark text-[10px] opacity-70"></i>');
+            c.appendChild(btn);
         });
     }
 
@@ -1165,27 +1160,31 @@
         if (!d.wg_miesiecy || !d.wg_miesiecy.length) { c.innerHTML = ''; return; }
         const dozwolone = jezWybraneFrakcje();
 
+        // Na waskim ekranie nazwy frakcji sa ukryte - zostaja same ikony, dzieki
+        // czemu cala tabela miesci sie na telefonie bez przewijania w bok.
         const naglowki = d.frakcje.map(f =>
-            `<th class="px-3 py-2 text-center font-bold ${dozwolone.includes(f.id) ? '' : 'opacity-40'}">
+            `<th class="px-1.5 sm:px-3 py-2 text-center font-bold ${dozwolone.includes(f.id) ? '' : 'opacity-40'}" title="${f.nazwa}">
                 <i class="${f.icon} block mb-1 text-sm"></i>
-                <span class="text-[10px] leading-tight block">${f.nazwa}</span>
+                <span class="hidden sm:block text-[10px] leading-tight">${f.nazwa}</span>
              </th>`).join('');
 
         const wiersze = d.wg_miesiecy.map(m => {
             const komorki = d.frakcje.map(f => {
                 const dni = (m.dni && m.dni[f.id]) ? m.dni[f.id] : [];
                 const akt = dozwolone.includes(f.id);
-                return `<td class="px-3 py-2 text-center font-mono ${akt ? 'text-gray-700 dark:text-gray-200' : 'text-gray-300 dark:text-slate-600'}">${dni.length ? dni.join(', ') : '·'}</td>`;
+                return `<td class="px-1.5 sm:px-3 py-2 text-center font-mono whitespace-nowrap ${akt ? 'text-gray-700 dark:text-gray-200' : 'text-gray-300 dark:text-slate-600'}">${dni.length ? dni.join(',&#8203;') : '·'}</td>`;
             }).join('');
             return `<tr class="border-t border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40">
-                        <td class="px-3 py-2 font-bold text-gray-600 dark:text-gray-300 whitespace-nowrap">${m.nazwa}</td>${komorki}
+                        <td class="px-1.5 sm:px-3 py-2 font-bold text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                            <span class="sm:hidden">${m.nazwa.slice(0, 3)}</span><span class="hidden sm:inline">${m.nazwa}</span>
+                        </td>${komorki}
                     </tr>`;
         }).join('');
 
         c.innerHTML = `
-            <table class="w-full text-xs border-collapse">
+            <table class="w-full text-[11px] sm:text-xs border-collapse">
                 <thead class="text-gray-500 dark:text-gray-400">
-                    <tr><th class="px-3 py-2 text-left">Miesiąc</th>${naglowki}</tr>
+                    <tr><th class="px-1.5 sm:px-3 py-2 text-left">Mies.</th>${naglowki}</tr>
                 </thead>
                 <tbody>${wiersze}</tbody>
             </table>`;
