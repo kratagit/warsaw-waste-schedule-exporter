@@ -229,8 +229,9 @@
                     </label>
                 </div>
 
-                <!-- Filtry frakcji -->
-                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden flex flex-col flex-grow card-hover">
+                <!-- Filtry frakcji (bez flex-grow - karta ma byc wysoka na tyle,
+                     ile zajmuja frakcje, a nie na cala kolumne) -->
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden flex flex-col flex-shrink-0 card-hover">
                     <div class="p-6 border-b border-gray-100 dark:border-slate-700">
                         <div class="flex items-center">
                             <i class="fas fa-sliders-h text-blue-500 mr-3 text-lg"></i>
