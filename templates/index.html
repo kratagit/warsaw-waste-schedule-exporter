@@ -287,10 +287,11 @@
                     </div>
 
                     <!-- Przyciski (układ jak w panelu Warszawy) -->
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10">
-                        <!-- POBRANIE HARMONOGRAMU ZE STRONY KOMA (jeszcze niedostępne) -->
+                    <div class="grid grid-cols-3 gap-4 relative z-10">
+                        <!-- SYNCHRONIZACJA: docelowo pobierze PDF ze strony KOMA i od razu go odczyta.
+                             Na razie odczytuje pliki leżące w data/jeziorowskie/pdf. -->
                         <button id="jezRunBtn" onclick="handleJezMainButton()"
-                                class="col-span-2 md:col-span-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
+                                class="col-span-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
                             <i class="fas fa-circle-notch fa-spin hidden" id="jezBtnSpinner"></i>
                             <span id="jezBtnIcon"><i class="fas fa-sync-alt text-lg group-hover:rotate-180 transition-transform duration-700"></i></span>
                             <span id="jezBtnText">Synchronizuj</span>
@@ -308,12 +309,6 @@
                                 class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
                             <i class="fas fa-file-pdf text-red-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
                             <span>Oryginał</span>
-                        </button>
-
-                        <button onclick="reparseJezPdfs()"
-                                class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 py-3 rounded-lg transition-all flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
-                            <i class="fas fa-wand-magic-sparkles text-purple-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
-                            <span>Odczytaj PDF</span>
                         </button>
 
                         <button onclick="viewJezLogs()"
@@ -1128,16 +1123,48 @@
 
     // --- synchronizacja z Kalendarzem Google ---
 
-    // Duzy przycisk: pobranie harmonogramu wprost ze strony KOMA.
-    // Jeszcze niezrobione - na razie tlumaczy, skad biora sie dane.
-    function handleJezMainButton() {
+    // Duzy przycisk. Docelowo: pobierze PDF ze strony KOMA i od razu go odczyta.
+    // Krok pobierania jeszcze nie istnieje, wiec na razie wykonuje sama druga
+    // czesc - przepuszcza pliki z data/jeziorowskie/pdf przez parser.
+    async function handleJezMainButton() {
+        const btn = document.getElementById('jezRunBtn');
         const ok = document.getElementById('jezOkAlert');
-        document.getElementById('jezErrorAlert').classList.add('hidden');
-        ok.classList.remove('hidden');
-        document.getElementById('jezOkMessage').innerHTML =
-            '<b>Pobieranie ze strony KOMA nie jest jeszcze zrobione.</b> '
-            + 'Dane pochodzą z plików PDF w <code>data/jeziorowskie/pdf</code> — '
-            + 'żeby je odświeżyć, podmień pliki i kliknij <b>Odczytaj PDF</b>.';
+        const err = document.getElementById('jezErrorAlert');
+        ok.classList.add('hidden');
+        err.classList.add('hidden');
+
+        btn.disabled = true;
+        btn.classList.add('opacity-75', 'cursor-not-allowed');
+        document.getElementById('jezBtnSpinner').classList.remove('hidden');
+        document.getElementById('jezBtnIcon').classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/jeziorowskie/reparse', { method: 'POST' });
+            const d = await res.json();
+            if (d.status === 'error' && !(d.przetworzone || []).length) {
+                throw new Error((d.bledy || []).join('; ') || 'Nie udało się odczytać PDF-ów');
+            }
+
+            jezLogs = (d.przetworzone || []).map(p =>
+                `${p.plik} -> ${p.sektor} (${p.rok}), ${p.liczba_odbiorow} terminów` +
+                (p.ostrzezenia && p.ostrzezenia.length ? `, ostrzeżeń: ${p.ostrzezenia.length}` : ''));
+            (d.bledy || []).forEach(b => jezLogs.push('BŁĄD: ' + b));
+
+            await initJeziorowskie();
+            ok.classList.remove('hidden');
+            document.getElementById('jezOkMessage').innerHTML =
+                `<b>Odczytano ${(d.przetworzone || []).length} PDF-ów.</b> `
+                + 'Pobieranie plików wprost ze strony KOMA dojdzie w kolejnym kroku — '
+                + 'na razie źródłem są pliki w <code>data/jeziorowskie/pdf</code>.';
+        } catch (e) {
+            err.classList.remove('hidden');
+            document.getElementById('jezErrorMessage').textContent = e.message;
+        } finally {
+            btn.disabled = false;
+            btn.classList.remove('opacity-75', 'cursor-not-allowed');
+            document.getElementById('jezBtnSpinner').classList.add('hidden');
+            document.getElementById('jezBtnIcon').classList.remove('hidden');
+        }
     }
 
     // Przycisk "Do kalendarza" - tak samo jak w panelu Warszawy.
@@ -1255,28 +1282,6 @@
     function openJezPdf() {
         if (!jezCurrent) return;
         window.open(`/api/jeziorowskie/pdf/${jezCurrent.numer}?t=${Date.now()}`, '_blank');
-    }
-
-    async function reparseJezPdfs() {
-        const ok = document.getElementById('jezOkAlert');
-        const err = document.getElementById('jezErrorAlert');
-        ok.classList.add('hidden'); err.classList.add('hidden');
-        try {
-            const res = await fetch('/api/jeziorowskie/reparse', { method: 'POST' });
-            const d = await res.json();
-            if (d.status === 'error' && !d.przetworzone.length) throw new Error((d.bledy || []).join('; '));
-            jezLogs = (d.przetworzone || []).map(p =>
-                `${p.plik} -> ${p.sektor} (${p.rok}), ${p.liczba_odbiorow} terminów` +
-                (p.ostrzezenia && p.ostrzezenia.length ? `, ostrzeżeń: ${p.ostrzezenia.length}` : ''));
-            (d.bledy || []).forEach(b => jezLogs.push('BŁĄD: ' + b));
-            ok.classList.remove('hidden');
-            document.getElementById('jezOkMessage').innerHTML =
-                `<b>Odczytano PDF-y.</b> Zaktualizowano ${d.przetworzone.length} sektorów. Szczegóły w logach.`;
-            await initJeziorowskie();
-        } catch (e) {
-            err.classList.remove('hidden');
-            document.getElementById('jezErrorMessage').textContent = e.message;
-        }
     }
 
     function viewJezLogs() {
