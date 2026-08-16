@@ -595,18 +595,27 @@ def login():
     # Dodano prompt='consent', aby wymusić zwrócenie refresh_token
     auth_url, state = flow.authorization_url(access_type='offline', include_granted_scopes='true', prompt='consent')
     session['state'] = state
+    # PKCE: authorization_url() losuje code_verifier i wysyła do Google jego skrót.
+    # Callback tworzy nowy obiekt Flow, który tego losowania nie zna, więc verifier
+    # musi przejechać przez sesję - inaczej wymiana kodu konczy sie bledem
+    # "(invalid_grant) Missing code verifier".
+    session['code_verifier'] = flow.code_verifier
     return redirect(auth_url)
 
 @app.route('/oauth2callback')
 def oauth2callback():
-    state = session['state']
+    state = session.get('state')
+    if not state:
+        return redirect(url_for('login'))   # sesja wygasła - zaczynamy od nowa
     flow = Flow.from_client_secrets_file(
         CREDENTIALS_FILE,
         scopes=SCOPES,
         state=state,
         redirect_uri=url_for('oauth2callback', _external=True)
     )
+    flow.code_verifier = session.get('code_verifier')
     flow.fetch_token(authorization_response=request.url)
+    session.pop('code_verifier', None)
     with open(TOKEN_FILE, 'wb') as token: pickle.dump(flow.credentials, token)
     return redirect(url_for('home'))
 
