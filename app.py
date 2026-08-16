@@ -573,6 +573,14 @@ threading.Thread(target=auto_scheduler, daemon=True).start()
 
 # --- ROUTES ---
 
+@app.after_request
+def bez_cache_html(odpowiedz):
+    """Strona nie ma byc cache'owana - inaczej po zmianach w interfejsie
+    przegladarka pokazuje stara wersje i wyglada to jakby nic sie nie stalo."""
+    if odpowiedz.mimetype == 'text/html':
+        odpowiedz.headers['Cache-Control'] = 'no-store, must-revalidate'
+    return odpowiedz
+
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -655,8 +663,7 @@ def jez_config():
 
 @app.route('/api/jeziorowskie/schedule', methods=['GET'])
 def jez_schedule():
-    tylko_przyszle = request.args.get('upcoming', '0') in ('1', 'true', 'True')
-    dane = jeziorowskie.harmonogram(tylko_przyszle=tylko_przyszle)
+    dane = jeziorowskie.harmonogram()
     if not dane:
         return jsonify({"status": "error",
                         "message": "Brak danych - kliknij Synchronizuj"}), 404
@@ -681,8 +688,7 @@ def jez_sync():
 
     body = request.json or {}
     dozwolone = body.get('allowedTypes') or [f["id"] for f in jeziorowskie.FRAKCJE]
-    tylko_przyszle = body.get('onlyUpcoming', True)
-    jeziorowskie.uruchom_synchronizacje(service_google, dozwolone, tylko_przyszle)
+    jeziorowskie.uruchom_synchronizacje(service_google, dozwolone)
     return jsonify({"status": "started"})
 
 @app.route('/api/jeziorowskie/progress', methods=['GET'])
