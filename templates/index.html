@@ -697,23 +697,47 @@
             localStorage.theme = 'dark';
         }
     }
+    // Adres trzymamy na serwerze (last_state.json), zeby byl ten sam na kazdym
+    // urzadzeniu. localStorage sluzy juz tylko jako podreczny cache, dzieki
+    // ktoremu pole jest wypelnione zanim wroci odpowiedz z serwera.
     function loadAddress() {
         const saved = localStorage.getItem('wasteAddress');
         if(saved) document.getElementById('addressInput').value = saved;
     }
-    function saveAddress() {
-        const val = document.getElementById('addressInput').value;
-        if(val) {
-            localStorage.setItem('wasteAddress', val);
-            const btn = document.querySelector('button[onclick="saveAddress()"]');
-            const original = btn.innerHTML;
+
+    function ustawAdres(adres) {
+        const input = document.getElementById('addressInput');
+        if (!input || !adres || input.value === adres) return;
+        input.value = adres;
+        localStorage.setItem('wasteAddress', adres);
+        validateRunButton();
+    }
+
+    async function saveAddress() {
+        const val = document.getElementById('addressInput').value.trim();
+        if(!val) return;
+        localStorage.setItem('wasteAddress', val);
+
+        const btn = document.querySelector('button[onclick="saveAddress()"]');
+        const original = btn.innerHTML;
+        try {
+            const res = await fetch('/api/save-address', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address: val })
+            });
+            if (!(await res.json()).status) throw new Error('brak potwierdzenia');
             btn.innerHTML = '<i class="fas fa-check"></i> ZAPISANO';
             btn.classList.add('bg-emerald-600', 'text-white');
-            setTimeout(() => { 
-                btn.innerHTML = original; 
-                btn.classList.remove('bg-emerald-600', 'text-white');
-            }, 2000);
+        } catch (e) {
+            // zapis na serwerze się nie udał - adres zostaje przynajmniej lokalnie
+            btn.innerHTML = '<i class="fas fa-triangle-exclamation"></i> TYLKO LOKALNIE';
+            btn.classList.add('bg-amber-600', 'text-white');
         }
+        setTimeout(() => {
+            btn.innerHTML = original;
+            btn.classList.remove('bg-emerald-600', 'bg-amber-600', 'text-white');
+        }, 2000);
     }
 
     function initSyncPreferences() {
@@ -789,6 +813,9 @@
                     ? "text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wide ml-8 transition-colors duration-300"
                     : "text-[10px] font-bold text-gray-400 ml-8 transition-colors duration-300";
             }
+
+            // adres zapisany na serwerze wygrywa z tym z localStorage
+            if (data.saved_address) ustawAdres(data.saved_address);
 
             if (data.timestamp) document.getElementById('lastFetch').textContent = data.timestamp;
             

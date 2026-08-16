@@ -660,6 +660,15 @@ def toggle_auto():
     save_state(st)
     return jsonify({"status": "success", "auto_mode": en})
 
+@app.route('/api/save-address', methods=['POST'])
+def save_address():
+    """Zapisuje adres po stronie serwera, zeby byl ten sam na kazdym urzadzeniu."""
+    adres = ((request.json or {}).get('address') or '').strip()
+    st = load_state()
+    st['saved_address'] = adres
+    save_state(st)
+    return jsonify({"status": "success", "saved_address": adres})
+
 @app.route('/api/last-state', methods=['GET'])
 def last_state(): return jsonify(load_state())
 
