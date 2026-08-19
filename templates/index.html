@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Harmonogram Wywozu Śmieci</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <script>
@@ -375,9 +376,14 @@
     <div id="logsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50 transition-opacity duration-300" onclick="if(event.target.id=='logsModal') closeModal()">
         <div class="bg-slate-900 rounded-xl w-full max-w-5xl h-[80vh] flex flex-col border border-slate-700 shadow-2xl overflow-hidden transform scale-100 transition-all">
             <div class="flex justify-between items-center p-4 bg-slate-800 border-b border-slate-700">
-                <h3 class="text-emerald-400 font-mono text-sm uppercase tracking-wider"><i class="fas fa-terminal mr-2"></i> Logi Systemowe</h3>
-                <div class="flex gap-2">
-                    <button onclick="copyLogs()" class="text-xs px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 transition font-bold uppercase tracking-wide">Kopiuj</button>
+                <h3 id="logsModalTitle" class="text-emerald-400 font-mono text-sm uppercase tracking-wider"><i class="fas fa-terminal mr-2"></i> Logi Systemowe</h3>
+                <div class="flex items-center gap-2">
+                    <button id="clearLogsBtn" onclick="clearLogs()" class="text-xs px-3 py-1.5 rounded bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/60 transition font-bold uppercase tracking-wide flex items-center gap-1.5">
+                        <i class="fas fa-trash-alt text-[10px]"></i> <span>Wyczyść</span>
+                    </button>
+                    <button onclick="copyLogs()" class="text-xs px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 transition font-bold uppercase tracking-wide flex items-center gap-1.5">
+                        <i class="fas fa-copy text-[10px]"></i> <span>Kopiuj</span>
+                    </button>
                     <button onclick="closeModal()" class="text-slate-400 hover:text-white px-2 transition-transform hover:rotate-90"><i class="fas fa-times text-lg"></i></button>
                 </div>
             </div>
@@ -913,7 +919,12 @@
         return new Date(year, month, day);
     }
 
+    let activeLogsRegion = 'warszawa';
+
     function viewLogs() {
+        activeLogsRegion = 'warszawa';
+        const title = document.getElementById('logsModalTitle');
+        if (title) title.innerHTML = '<i class="fas fa-terminal mr-2"></i> Logi Systemowe · Warszawa';
         document.getElementById('logsContent').value = currentLogs.join('\n') || "Brak logów.";
         document.getElementById('logsModal').classList.remove('hidden');
     }
@@ -923,6 +934,30 @@
     }
     function closeModal() {
         document.getElementById('logsModal').classList.add('hidden');
+    }
+    async function clearLogs() {
+        const btn = document.getElementById('clearLogsBtn');
+        const origHtml = btn ? btn.innerHTML : '';
+        if (btn) btn.innerHTML = '<i class="fas fa-circle-notch fa-spin text-[10px]"></i> <span>Czyszczenie...</span>';
+
+        const region = activeLogsRegion || (localStorage.getItem('wasteRegion') || 'warszawa');
+        try {
+            if (region === 'jeziorowskie') {
+                await fetch('/api/jeziorowskie/clear-logs', { method: 'POST' });
+                jezLogs = [];
+            } else {
+                await fetch('/api/clear-logs', { method: 'POST' });
+                currentLogs = [];
+            }
+            document.getElementById('logsContent').value = "Brak logów.";
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-check text-[10px]"></i> <span>Wyczyszczono</span>';
+                setTimeout(() => { if (btn) btn.innerHTML = origHtml; }, 1500);
+            }
+        } catch (e) {
+            if (btn) btn.innerHTML = origHtml;
+            alert('Błąd podczas czyszczenia logów: ' + e.message);
+        }
     }
 
     // =====================================================================
@@ -1430,6 +1465,9 @@
     }
 
     async function viewJezLogs() {
+        activeLogsRegion = 'jeziorowskie';
+        const title = document.getElementById('logsModalTitle');
+        if (title) title.innerHTML = '<i class="fas fa-terminal mr-2"></i> Logi Systemowe · Jeziorowskie';
         try {
             const res = await fetch('/api/jeziorowskie/logs');
             const data = await res.json();

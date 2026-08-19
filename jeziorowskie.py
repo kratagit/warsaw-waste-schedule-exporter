@@ -170,6 +170,14 @@ def dodaj_log(msg: str) -> None:
     zapisz_logi(logi)
 
 
+def wyczysc_logi() -> None:
+    """Czyści trwale zapisane logi dla regionu Jeziorowskie."""
+    zapisz_logi([])
+    with _progress_lock:
+        if _progress.get("result") and isinstance(_progress["result"], dict):
+            _progress["result"]["logs"] = []
+
+
 def wczytaj_dane() -> dict | None:
     """Surowy odczyt zapisanego harmonogramu."""
     if not os.path.exists(_plik_danych()):

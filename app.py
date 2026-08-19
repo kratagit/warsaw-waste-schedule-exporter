@@ -743,6 +743,20 @@ def jez_logs():
     """Zwraca listę logów dla regionu Jeziorowskie."""
     return jsonify({"logs": jeziorowskie.wczytaj_logi()})
 
+@app.route('/api/clear-logs', methods=['POST'])
+def clear_logs():
+    """Czyści logi dla regionu Warszawa."""
+    st = load_state()
+    st['logs'] = []
+    save_state(st)
+    return jsonify({"status": "success"})
+
+@app.route('/api/jeziorowskie/clear-logs', methods=['POST'])
+def jez_clear_logs():
+    """Czyści logi dla regionu Jeziorowskie."""
+    jeziorowskie.wyczysc_logi()
+    return jsonify({"status": "success"})
+
 if __name__ == '__main__':
     # ssl_context='adhoc' generuje szybki certyfikat w locie
     app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False, ssl_context='adhoc')
