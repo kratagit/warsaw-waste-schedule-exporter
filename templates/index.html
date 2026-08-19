@@ -14,8 +14,8 @@
   </script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
-    .fade-in { animation: fadeIn 0.6s ease-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
     .card-hover:hover { transform: translateY(-2px); transition: all 0.3s ease; }
     ::-webkit-scrollbar { width: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -209,7 +209,7 @@
 
     <!-- WIDOK: JEZIOROWSKIE (gmina Stare Juchy, dane z PDF-ów KOMA) -->
     <div id="viewJeziorowskie" class="hidden">
-        <div class="flex flex-col gap-6 fade-in">
+        <div class="flex flex-col gap-6">
 
             <!-- GÓRNY RZĄD: filtry obok panelu sterowania. Bez items-start, zeby
                  obie karty mialy te sama wysokosc.
@@ -218,7 +218,7 @@
             <div class="grid lg:grid-cols-12 gap-6">
 
                 <!-- FILTRY -->
-                <div class="lg:col-span-3 order-2 lg:order-1 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 card-hover flex flex-col">
+                <div class="lg:col-span-3 order-2 lg:order-1 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 card-hover flex flex-col fade-in" style="animation-delay: 0.1s">
                     <div class="flex items-center mb-3 flex-shrink-0">
                         <i class="fas fa-sliders-h text-blue-500 mr-2 text-base"></i>
                         <h2 class="text-xs font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Filtry</h2>
@@ -229,7 +229,7 @@
                 </div>
 
                 <!-- PANEL STEROWANIA -->
-                <div class="lg:col-span-9 order-1 lg:order-2 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 card-hover relative overflow-hidden">
+                <div class="lg:col-span-9 order-1 lg:order-2 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 card-hover relative overflow-hidden fade-in" style="animation-delay: 0.2s">
                     <div class="absolute top-0 right-0 -mt-10 -mr-10 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-4 sm:mb-6 pb-4 border-b border-gray-100 dark:border-slate-700 gap-3 sm:gap-4 relative z-10">
@@ -279,10 +279,10 @@
                     </div>
 
                     <!-- Przyciski (układ jak w panelu Warszawy) -->
-                    <div class="grid grid-cols-3 gap-4 relative z-10">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10">
                         <!-- SYNCHRONIZACJA: pobiera PDF ze strony gminy i od razu go odczytuje -->
                         <button id="jezRunBtn" onclick="handleJezMainButton()"
-                                class="col-span-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
+                                class="col-span-2 md:col-span-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
                             <i class="fas fa-circle-notch fa-spin hidden" id="jezBtnSpinner"></i>
                             <span id="jezBtnIcon"><i class="fas fa-sync-alt text-lg group-hover:rotate-180 transition-transform duration-700"></i></span>
                             <span id="jezBtnText">Synchronizuj</span>
@@ -296,14 +296,21 @@
                             <span id="jezCalText">Do kalendarza</span>
                         </button>
 
+                        <!-- EKSPORT DO PLIKU .ICS -->
+                        <button id="jezIcsBtn" onclick="exportJezIcs()"
+                                class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500 py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
+                            <i class="fas fa-file-export text-blue-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
+                            <span>Eksport .ics</span>
+                        </button>
+
                         <button id="jezPdfBtn" onclick="openJezPdf()"
-                                class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
+                                class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500 py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
                             <i class="fas fa-file-pdf text-red-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
                             <span>Oryginał</span>
                         </button>
 
                         <button onclick="viewJezLogs()"
-                                class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 py-3 rounded-lg transition-all flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
+                                class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500 py-3 rounded-lg transition-all flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
                             <i class="fas fa-terminal text-gray-500 dark:text-gray-400 text-lg group-hover:scale-110 transition-transform duration-300"></i>
                             <span>Logi</span>
                         </button>
@@ -317,7 +324,7 @@
             <div class="grid lg:grid-cols-12 gap-6 items-start">
 
                     <!-- NAJBLIŻSZE ODBIORY -->
-                    <div class="lg:col-span-5 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6">
+                    <div class="lg:col-span-5 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 fade-in" style="animation-delay: 0.3s">
                         <h3 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider mb-4 flex items-center border-b border-gray-100 dark:border-slate-700 pb-4">
                             <i class="far fa-calendar-alt mr-2 text-lg text-emerald-500"></i> Najbliższe odbiory
                         </h3>
@@ -325,7 +332,7 @@
                     </div>
 
                     <!-- HARMONOGRAM ROCZNY -->
-                    <div class="lg:col-span-7 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6">
+                    <div class="lg:col-span-7 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 fade-in" style="animation-delay: 0.4s">
                         <h3 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider mb-4 flex items-center border-b border-gray-100 dark:border-slate-700 pb-4">
                             <i class="fas fa-table mr-2 text-lg text-blue-500"></i> Harmonogram roczny
                         </h3>
@@ -953,6 +960,16 @@
         document.getElementById('btnRegionWarszawa').className = jest ? pasywny : aktywny;
         document.getElementById('btnRegionJeziorowskie').className = jest ? aktywny : pasywny;
 
+        // Restart animacji kaskadowej dla widoku, aby kafelki wjeżdżały po kolei
+        const targetView = document.getElementById(jest ? 'viewJeziorowskie' : 'viewWarszawa');
+        if (targetView) {
+            targetView.querySelectorAll('.fade-in').forEach(el => {
+                el.style.animation = 'none';
+                el.offsetHeight; /* trigger reflow */
+                el.style.animation = '';
+            });
+        }
+
         if (jest && !cichy && !jezCurrent) initJeziorowskie();
     }
 
@@ -1028,6 +1045,9 @@
             const res = await fetch('/api/jeziorowskie/schedule');
             if (!res.ok) throw new Error('brak danych');
             jezCurrent = await res.json();
+            if (jezCurrent.logs && jezCurrent.logs.length) {
+                jezLogs = jezCurrent.logs;
+            }
             renderJezSector(jezCurrent);
         } catch (e) {
             pokazJezBlad('Nie udało się wczytać harmonogramu. '
@@ -1063,6 +1083,9 @@
             warn.classList.add('hidden');
         }
 
+        const maDane = !!(d && d.odbiory && d.odbiory.length);
+        const icsBtn = document.getElementById('jezIcsBtn');
+        if (icsBtn) icsBtn.disabled = !maDane;
         document.getElementById('jezPdfBtn').disabled = !d.pdf_dostepny;
         updateJezCount();
         renderJezUpcoming(d);
@@ -1379,12 +1402,39 @@
 
     // --- pozostale akcje ---
 
+    function exportJezIcs() {
+        if (!jezCurrent) {
+            alert('Brak wczytanego harmonogramu.');
+            return;
+        }
+        const dozwolone = jezWybraneFrakcje();
+        if (!dozwolone.length) {
+            alert('Zaznacz przynajmniej jedną frakcję.');
+            return;
+        }
+        const params = new URLSearchParams();
+        params.set('types', dozwolone.join(','));
+        window.location.href = `/api/jeziorowskie/export.ics?${params.toString()}`;
+        setTimeout(async () => {
+            try {
+                const res = await fetch('/api/jeziorowskie/logs');
+                const data = await res.json();
+                if (data.logs && data.logs.length) jezLogs = data.logs;
+            } catch (e) {}
+        }, 1000);
+    }
+
     function openJezPdf() {
         if (!jezCurrent) return;
         window.open(`/api/jeziorowskie/pdf?t=${Date.now()}`, '_blank');
     }
 
-    function viewJezLogs() {
+    async function viewJezLogs() {
+        try {
+            const res = await fetch('/api/jeziorowskie/logs');
+            const data = await res.json();
+            if (data.logs && data.logs.length) jezLogs = data.logs;
+        } catch (e) {}
         document.getElementById('logsContent').value = jezLogs.join('\n') || "Brak logów.";
         document.getElementById('logsModal').classList.remove('hidden');
     }

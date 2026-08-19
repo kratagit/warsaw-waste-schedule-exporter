@@ -124,6 +124,52 @@ def _plik_danych() -> str:
     return os.path.join(DATA_DIR, f"sektor-{SEKTOR}.json")
 
 
+def _plik_logow() -> str:
+    return os.path.join(DATA_DIR, "last_logs.json")
+
+
+def wczytaj_logi() -> list[str]:
+    """Odczytuje trwale zapisane logi ostatniej operacji."""
+    if os.path.exists(_plik_logow()):
+        try:
+            with open(_plik_logow(), "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    # Jeśli plik logów nie istnieje, ale mamy wczytane dane sektora, zwróć log informacyjny
+    dane = wczytaj_dane()
+    if dane:
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        return [
+            f"[{ts}][jeziorowskie] Załadowano harmonogram z pliku lokalnego: {dane.get('sektor', 'SEKTOR II')} (rok {dane.get('rok', '')})",
+            f"[{ts}][jeziorowskie] Odczytano {dane.get('liczba_odbiorow', len(dane.get('odbiory', [])))} terminów z pliku \"{dane.get('plik', '')}\"",
+            f"[{ts}][jeziorowskie] Gotowy do synchronizacji lub eksportu.",
+        ]
+    return []
+
+
+def zapisz_logi(logi: list[str]) -> None:
+    """Zapisuje listę logów do trwałego pliku JSON."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    try:
+        with open(_plik_logow(), "w", encoding="utf-8") as f:
+            json.dump(logi, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def dodaj_log(msg: str) -> None:
+    """Dopisuje pojedynczy wpis do logów i wypisuje w konsoli."""
+    ts = datetime.datetime.now().strftime("%H:%M:%S")
+    wpis = f"[{ts}][jeziorowskie] {msg}"
+    _bezpieczny_print(wpis)
+    logi = wczytaj_logi()
+    logi.append(wpis)
+    if len(logi) > 200:
+        logi = logi[-200:]
+    zapisz_logi(logi)
+
+
 def wczytaj_dane() -> dict | None:
     """Surowy odczyt zapisanego harmonogramu."""
     if not os.path.exists(_plik_danych()):
@@ -186,6 +232,7 @@ def harmonogram() -> dict | None:
         "ostrzezenia": dane.get("ostrzezenia", []),
         "pdf_dostepny": sciezka_pdf() is not None,
         "zrodlo_pdf": dane.get("plik"),
+        "logs": wczytaj_logi(),
     }
 
 
@@ -294,6 +341,7 @@ def synchronizuj(service, dozwolone: list[str]) -> dict:
         wynik["timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log(f"--- SUKCES: dodano {wynik['added_events']}, "
             f"pominięto duplikatów {wynik['skipped']} ---")
+        zapisz_logi(wynik["logs"])
         with _progress_lock:
             _progress.update({"percent": 100, "message": "Zakończono pomyślnie!",
                               "status": "finished", "result": wynik})
@@ -301,6 +349,7 @@ def synchronizuj(service, dozwolone: list[str]) -> dict:
         log(f"BŁĄD: {e}")
         wynik["status"] = "error"
         wynik["message"] = str(e)
+        zapisz_logi(wynik["logs"])
         with _progress_lock:
             _progress.update({"status": "error", "message": str(e), "result": wynik})
     return wynik
@@ -433,12 +482,14 @@ def pobierz_i_przetworz() -> dict:
             "ostrzezenia": dane.get("ostrzezenia", []),
         })
         _ustaw_postep(100, "Zakończono pomyślnie!", status="finished")
+        zapisz_logi(wynik["logs"])
         with _progress_lock:
             _progress["result"] = wynik
     except Exception as e:
         log(f"BŁĄD: {e}")
         wynik["status"] = "error"
         wynik["message"] = str(e)
+        zapisz_logi(wynik["logs"])
         with _progress_lock:
             _progress.update({"status": "error", "message": str(e), "result": wynik})
     return wynik
@@ -450,3 +501,114 @@ def uruchom_pobieranie() -> None:
         _progress.update({"status": "running", "percent": 0,
                           "message": "Łączenie ze stroną gminy...", "result": None})
     threading.Thread(target=pobierz_i_przetworz, daemon=True).start()
+
+
+# --- eksport do formatu iCalendar (.ics) ---
+
+def _escape_ical_text(tekst: str) -> str:
+    """Escapuje znaki specjalne dla pól tekstowych RFC 5545 (SUMMARY, DESCRIPTION)."""
+    if not tekst:
+        return ""
+    tekst = str(tekst).replace("\\", "\\\\")
+    tekst = tekst.replace(";", "\\;")
+    tekst = tekst.replace(",", "\\,")
+    tekst = tekst.replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n")
+    return tekst
+
+
+def _fold_ical_line(line: str) -> str:
+    """Zawija wiersz zgodnie z RFC 5545 (maksymalnie 75 oktetów na wiersz)."""
+    b = line.encode("utf-8")
+    if len(b) <= 75:
+        return line
+    chunks = []
+    while len(b) > 75:
+        split_idx = 75
+        while split_idx > 0:
+            try:
+                b[:split_idx].decode("utf-8")
+                break
+            except UnicodeDecodeError:
+                split_idx -= 1
+        chunks.append(b[:split_idx].decode("utf-8"))
+        b = b" " + b[split_idx:]
+    if b:
+        chunks.append(b.decode("utf-8"))
+    return "\r\n".join(chunks)
+
+
+def generuj_ics(dozwolone: list[str] | None = None) -> str | None:
+    """Generuje plik .ics (iCalendar) zgodny z RFC 5545 i Google Calendar.
+
+    Args:
+        dozwolone: lista identyfikatorów frakcji do uwzględnienia. Jeśli None,
+                   eksportowane są wszystkie dostępne w harmonogramie frakcje.
+
+    Returns:
+        Treść pliku .ics ze znakami końca linii CRLF (\r\n) lub None w razie braku danych.
+    """
+    dane = harmonogram()
+    if not dane or not dane.get("odbiory"):
+        return None
+
+    if dozwolone is None:
+        dozwolone = [f["id"] for f in dane.get("frakcje", [])]
+
+    # Filtruj pozycje
+    pozycje = [
+        (o["data"], fr["id"])
+        for o in dane["odbiory"]
+        for fr in o["frakcje"]
+        if fr["id"] in dozwolone
+    ]
+    if not pozycje:
+        return None
+
+    opis = f"{dane.get('sektor', '')} - {dane.get('wykaz', '')}".strip(" -")
+    opis_escaped = _escape_ical_text(opis)
+    now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+    linie = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Harmonogram Wywozu//Jeziorowskie//PL",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:{_escape_ical_text(CALENDAR_NAME)}",
+        "X-WR-TIMEZONE:Europe/Warsaw",
+    ]
+
+    for data_iso, frakcja_id in pozycje:
+        frakcja = FRAKCJE_WG_ID.get(frakcja_id, {"nazwa": frakcja_id})
+        nazwa_frakcji = frakcja.get("nazwa", frakcja_id)
+        summary = f"Odbiór: {nazwa_frakcji}"
+        summary_escaped = _escape_ical_text(summary)
+
+        dt_start = datetime.date.fromisoformat(data_iso)
+        dt_end = dt_start + datetime.timedelta(days=1)
+        dtstart_str = dt_start.strftime("%Y%m%d")
+        dtend_str = dt_end.strftime("%Y%m%d")
+
+        uid = f"{dtstart_str}-{frakcja_id}-sektor{SEKTOR}@stare-juchy.pl"
+
+        linie.extend([
+            "BEGIN:VEVENT",
+            f"UID:{uid}",
+            f"DTSTAMP:{now_utc}",
+            f"DTSTART;VALUE=DATE:{dtstart_str}",
+            f"DTEND;VALUE=DATE:{dtend_str}",
+            f"SUMMARY:{summary_escaped}",
+            f"DESCRIPTION:{opis_escaped}",
+            "STATUS:CONFIRMED",
+            "TRANSP:TRANSPARENT",
+            "END:VEVENT",
+        ])
+
+    linie.append("END:VCALENDAR")
+
+    nazwy_frakcji = [FRAKCJE_WG_ID.get(fid, {}).get("nazwa", fid) for fid in dozwolone]
+    dodaj_log(f"Wyeksportowano plik .ics: {len(pozycje)} terminów (frakcje: {', '.join(nazwy_frakcji)})")
+
+    linie_folded = [_fold_ical_line(l) for l in linie]
+    return "\r\n".join(linie_folded) + "\r\n"
+

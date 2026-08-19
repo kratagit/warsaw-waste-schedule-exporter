@@ -8,7 +8,7 @@ import glob
 import threading
 import math
 import fitz  # PyMuPDF
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory, Response
 
 # Harmonogram gminy Stare Juchy (Jeziorowskie) - modul niezalezny od czesci warszawskiej
 import jeziorowskie
@@ -719,6 +719,29 @@ def jez_pdf():
     if not sciezka:
         return jsonify({"status": "error", "message": "Brak pliku PDF"}), 404
     return send_from_directory(os.path.dirname(sciezka), os.path.basename(sciezka))
+
+@app.route('/api/jeziorowskie/export.ics', methods=['GET'])
+def jez_export_ics():
+    """Eksportuje harmonogram Jeziorowskie do pliku .ics (iCalendar)."""
+    frakcje_param = request.args.get('types')
+    dozwolone = [f.strip() for f in frakcje_param.split(',') if f.strip()] if frakcje_param else None
+
+    ics_text = jeziorowskie.generuj_ics(dozwolone)
+    if not ics_text:
+        return jsonify({"status": "error", "message": "Brak danych harmonogramu do wyeksportowania"}), 404
+
+    dane = jeziorowskie.harmonogram()
+    rok = dane.get("rok", "") if dane else ""
+    filename = f"harmonogram-jeziorowskie-{rok}.ics" if rok else "harmonogram-jeziorowskie.ics"
+
+    response = Response(ics_text, mimetype="text/calendar; charset=utf-8")
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+@app.route('/api/jeziorowskie/logs', methods=['GET'])
+def jez_logs():
+    """Zwraca listę logów dla regionu Jeziorowskie."""
+    return jsonify({"logs": jeziorowskie.wczytaj_logi()})
 
 if __name__ == '__main__':
     # ssl_context='adhoc' generuje szybki certyfikat w locie
