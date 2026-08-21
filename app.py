@@ -13,6 +13,10 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, s
 # Harmonogram gminy Stare Juchy (Jeziorowskie) - modul niezalezny od czesci warszawskiej
 import jeziorowskie
 
+# wspolna obsluga formatu .ics i publikacji do GitHub Gist
+import gist
+import ical
+
 # Selenium
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -300,6 +304,66 @@ def save_state(state):
         with open(STATE_FILE, 'w', encoding='utf-8') as f: json.dump(state, f, ensure_ascii=False)
     except: pass
 
+# --- EKSPORT .ics I STALY LINK SUBSKRYPCJI (Gist) ---
+# Warszawa i Jeziorowskie maja osobne Gisty i osobne pliki konfiguracyjne,
+# wiec publikacja jednego harmonogramu nie nadpisuje drugiego.
+
+def _plik_gist_warszawa():
+    katalog = os.path.dirname(os.path.abspath(STATE_FILE)) or BASE_DIR
+    return os.path.join(katalog, "gist_config_warszawa.json")
+
+
+def generuj_ics_warszawa(allowed_types=None):
+    """Buduje plik .ics z terminow pobranych ze strony 19115.
+
+    Zwraca None, gdy nie ma jeszcze zadnych danych albo filtry odsialy wszystko.
+    """
+    state = load_state()
+    pozycje = state.get("schedule", [])
+    if not pozycje:
+        return None
+
+    if allowed_types is None:
+        allowed_types = list(WASTE_COLORS.keys())
+
+    # Celowo bez adresu: link do Gista dziala dla kazdego, kto go zna, a plik
+    # .ics nie musi zdradzac, gdzie mieszkamy. Adres i tak widac w panelu.
+    opis = "Harmonogram wywozu odpadów - Warszawa (19115)"
+    wydarzenia = []
+    for item in pozycje:
+        typ = item.get("wasteType", "")
+        if typ not in allowed_types:
+            continue
+        # 19115 podaje date slownie ("26 sierpnia") - bez tego nie ma wydarzenia
+        data = parse_polish_date(item.get("dateText", ""))
+        if not data:
+            continue
+        wydarzenia.append({
+            "uid": f"{data.strftime('%Y%m%d')}-{ical.slug(typ)}@warszawa19115.pl",
+            "data": data,
+            "summary": f"Odbiór: {typ}",
+            "opis": opis,
+        })
+
+    if not wydarzenia:
+        return None
+    return ical.zbuduj(CALENDAR_NAME, "-//Harmonogram Wywozu//Warszawa//PL", wydarzenia)
+
+
+def publikuj_warszawe_do_gist(token=None, allowed_types=None):
+    """Publikuje lub aktualizuje warszawski harmonogram jako niepubliczny Gist."""
+    ics_text = generuj_ics_warszawa(allowed_types)
+    if not ics_text:
+        raise Exception("Brak danych harmonogramu do wyeksportowania.")
+
+    return gist.publikuj(
+        plik_konfiguracyjny=_plik_gist_warszawa(),
+        nazwa_pliku="harmonogram-warszawa.ics",
+        opis="Harmonogram wywozu odpadów - Warszawa (iCalendar)",
+        tresc=ics_text,
+        token=token,
+    )
+
 # --- PROCES SYNCHRONIZACJI ---
 
 def send_schedule_to_calendar(service_google, schedule_data, allowed_types, log,
@@ -566,7 +630,17 @@ def run_full_process(address, allowed_types, send_to_calendar=True):
         results['timestamp'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         save_state(results)
-        
+
+        # Stary link subskrypcji wskazywalby na poprzednie terminy, wiec po
+        # zapisaniu nowych danych odswiezamy Gist. Blad tutaj nie moze wywrocic
+        # samej synchronizacji - link po prostu zostanie nieaktualny.
+        if gist.token_ze_srodowiska():
+            try:
+                g_res = publikuj_warszawe_do_gist(allowed_types=allowed_types)
+                log(f"Zaktualizowano subskrypcję Gist: {g_res.get('raw_url')}")
+            except Exception as ge:
+                log(f"Uwaga: Nie udało się zaktualizować GitHub Gist ({ge})")
+
         with progress_lock:
             progress_state["percent"] = 100
             progress_state["message"] = "Zakończono pomyślnie!"
@@ -710,6 +784,58 @@ def save_address():
 @app.route('/api/last-state', methods=['GET'])
 def last_state(): return jsonify(load_state())
 
+@app.route('/api/export.ics', methods=['GET'])
+def export_ics():
+    """Eksportuje warszawski harmonogram do pliku .ics (iCalendar)."""
+    param = request.args.get('types')
+    allowed = [t.strip() for t in param.split(',') if t.strip()] if param else None
+
+    ics_text = generuj_ics_warszawa(allowed)
+    if not ics_text:
+        return jsonify({"status": "error",
+                        "message": "Brak danych harmonogramu do wyeksportowania"}), 404
+
+    response = Response(ics_text, mimetype="text/calendar")
+    response.headers["Content-Disposition"] = 'attachment; filename="harmonogram-warszawa.ics"'
+    return response
+
+@app.route('/api/gist-config', methods=['GET'])
+def warszawa_gist_config():
+    """Zwraca stan konfiguracji GitHub Gist dla Warszawy (bez ujawniania tokenu)."""
+    cfg = dict(gist.wczytaj_config(_plik_gist_warszawa()))
+    tok = cfg.pop("token", "")
+    cfg["has_token"] = bool(tok)
+    # Podpowiedz diagnostyczna: czy token dotarl i czy nie jest obciety.
+    cfg["token_length"] = len(tok)
+    cfg["token_prefix"] = tok[:4] if tok else ""
+    return jsonify(cfg)
+
+@app.route('/api/publish-gist', methods=['POST'])
+def warszawa_publish_gist():
+    """Publikuje lub aktualizuje warszawski harmonogram w GitHub Gist."""
+    body = request.json or {}
+    try:
+        res = publikuj_warszawe_do_gist(token=body.get("token"),
+                                        allowed_types=body.get("allowedTypes"))
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+@app.route('/api/calendar-url', methods=['GET'])
+def warszawa_calendar_url():
+    """Zwraca staly link subskrypcji .ics, generujac go w razie potrzeby."""
+    try:
+        cfg = gist.wczytaj_config(_plik_gist_warszawa())
+        url = cfg.get("raw_url")
+        if not url and gist.token_ze_srodowiska():
+            url = publikuj_warszawe_do_gist().get("raw_url")
+        if not url:
+            return jsonify({"status": "error",
+                            "message": "Brak skonfigurowanego tokena w pliku .env (GITHUB_GIST_TOKEN)."}), 400
+        return jsonify({"status": "success", "url": url})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
 # --- JEZIOROWSKIE (sektor II gminy Stare Juchy) ---
 # Osobne trasy i osobny kalendarz - nie dotykaja logiki warszawskiej.
 
@@ -772,7 +898,7 @@ def jez_export_ics():
     rok = dane.get("rok", "") if dane else ""
     filename = f"harmonogram-jeziorowskie-{rok}.ics" if rok else "harmonogram-jeziorowskie.ics"
 
-    response = Response(ics_text, mimetype="text/calendar; charset=utf-8")
+    response = Response(ics_text, mimetype="text/calendar")
     response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
