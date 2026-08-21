@@ -35,7 +35,7 @@ def token_ze_srodowiska() -> str:
 def wczytaj_config(plik: str) -> dict:
     """Wczytuje stan publikacji (gist_id, raw_url, last_updated) i token."""
     cfg = {"token": "", "token_source": "none", "gist_id": "",
-           "raw_url": "", "last_updated": ""}
+           "raw_url": "", "last_updated": "", "frakcje": []}
 
     if os.path.exists(plik):
         try:
@@ -99,8 +99,14 @@ def wywolaj_api(url: str, token: str, method: str = "GET",
 
 
 def publikuj(plik_konfiguracyjny: str, nazwa_pliku: str, opis: str,
-             tresc: str, token: str | None = None) -> dict:
+             tresc: str, token: str | None = None,
+             frakcje: list[str] | None = None) -> dict:
     """Tworzy lub aktualizuje niepubliczny Gist z podana trescia.
+
+    Args:
+        frakcje: lista frakcji zawartych w publikowanym pliku. Zapisujemy ja
+                 w konfiguracji, zeby panel mogl rozpoznac, ze uzytkownik
+                 zmienil filtry i opublikowany kalendarz jest nieaktualny.
 
     Zwraca slownik ze stalym adresem raw_url i identyfikatorem Gista.
     """
@@ -140,7 +146,8 @@ def publikuj(plik_konfiguracyjny: str, nazwa_pliku: str, opis: str,
         raw_url = odpowiedz.get("files", {}).get(nazwa_pliku, {}).get("raw_url", "")
 
     teraz = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cfg.update({"token": tok, "gist_id": gist_id, "raw_url": raw_url, "last_updated": teraz})
+    cfg.update({"token": tok, "gist_id": gist_id, "raw_url": raw_url,
+                "last_updated": teraz, "frakcje": sorted(frakcje or [])})
     zapisz_config(plik_konfiguracyjny, cfg)
 
     return {
@@ -148,5 +155,6 @@ def publikuj(plik_konfiguracyjny: str, nazwa_pliku: str, opis: str,
         "gist_id": gist_id,
         "raw_url": raw_url,
         "last_updated": teraz,
+        "frakcje": sorted(frakcje or []),
         "message": "Pomyślnie opublikowano kalendarz na GitHub Gist!",
     }

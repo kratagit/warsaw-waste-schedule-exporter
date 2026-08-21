@@ -363,12 +363,17 @@ def publikuj_warszawe_do_gist(token=None, allowed_types=None):
     if not ics_text:
         raise Exception("Brak danych harmonogramu do wyeksportowania.")
 
+    # Zapisujemy rozwinieta liste - "None" znaczy "wszystkie", a panel musi
+    # miec z czym porownac biezace filtry.
+    uzyte = list(allowed_types) if allowed_types else list(WASTE_COLORS.keys())
+
     return gist.publikuj(
         plik_konfiguracyjny=_plik_gist_warszawa(),
         nazwa_pliku="harmonogram-warszawa.ics",
         opis="Harmonogram wywozu odpadów - Warszawa (iCalendar)",
         tresc=ics_text,
         token=token,
+        frakcje=uzyte,
     )
 
 # --- PROCES SYNCHRONIZACJI ---
@@ -825,16 +830,20 @@ def warszawa_publish_gist():
 
 @app.route('/api/calendar-url', methods=['GET'])
 def warszawa_calendar_url():
-    """Zwraca staly link subskrypcji .ics, generujac go w razie potrzeby."""
+    """Przepisuje Gist biezacymi filtrami i zwraca staly link subskrypcji.
+
+    Publikujemy przy kazdym wywolaniu, bo filtry mogly sie zmienic od ostatniego
+    razu, a adres pozostaje ten sam - Google zobaczy nowa tresc pod starym URL.
+    """
+    if not gist.token_ze_srodowiska():
+        return jsonify({"status": "error",
+                        "message": "Brak skonfigurowanego tokena w pliku .env (GITHUB_GIST_TOKEN)."}), 400
+    param = request.args.get('types')
+    allowed = [t.strip() for t in param.split(',') if t.strip()] if param else None
     try:
-        cfg = gist.wczytaj_config(_plik_gist_warszawa())
-        url = cfg.get("raw_url")
-        if not url and gist.token_ze_srodowiska():
-            url = publikuj_warszawe_do_gist().get("raw_url")
-        if not url:
-            return jsonify({"status": "error",
-                            "message": "Brak skonfigurowanego tokena w pliku .env (GITHUB_GIST_TOKEN)."}), 400
-        return jsonify({"status": "success", "url": url})
+        res = publikuj_warszawe_do_gist(allowed_types=allowed)
+        return jsonify({"status": "success", "url": res.get("raw_url"),
+                        "frakcje": res.get("frakcje", [])})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
 
@@ -931,16 +940,20 @@ def jez_publish_gist():
 
 @app.route('/api/jeziorowskie/calendar-url', methods=['GET'])
 def jez_calendar_url():
-    """Zwraca stały link subskrypcji .ics (z GitHub Gist), generując go w razie potrzeby."""
+    """Przepisuje Gist biezacymi filtrami i zwraca staly link subskrypcji.
+
+    Publikujemy przy kazdym wywolaniu, bo filtry mogly sie zmienic od ostatniego
+    razu, a adres pozostaje ten sam - Google zobaczy nowa tresc pod starym URL.
+    """
+    if not gist.token_ze_srodowiska():
+        return jsonify({"status": "error",
+                        "message": "Brak skonfigurowanego tokena w pliku .env (GITHUB_GIST_TOKEN)."}), 400
+    param = request.args.get('types')
+    dozwolone = [f.strip() for f in param.split(',') if f.strip()] if param else None
     try:
-        cfg = jeziorowskie.wczytaj_gist_config()
-        url = cfg.get("raw_url")
-        if not url and (os.environ.get("GITHUB_GIST_TOKEN") or os.environ.get("GITHUB_TOKEN")):
-            res = jeziorowskie.publikuj_do_gist()
-            url = res.get("raw_url")
-        if not url:
-            return jsonify({"status": "error", "message": "Brak skonfigurowanego tokena w pliku .env (GITHUB_GIST_TOKEN)."}), 400
-        return jsonify({"status": "success", "url": url})
+        res = jeziorowskie.publikuj_do_gist(dozwolone=dozwolone)
+        return jsonify({"status": "success", "url": res.get("raw_url"),
+                        "frakcje": res.get("frakcje", [])})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
 
