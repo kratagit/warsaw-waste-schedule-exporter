@@ -528,8 +528,11 @@ def uruchom_pobieranie() -> None:
 
 # --- eksport do formatu iCalendar (.ics) ---
 
-def generuj_ics(dozwolone: list[str] | None = None) -> str | None:
+def generuj_ics(dozwolone: list[str] | None = None, sekwencja: int = 0) -> str | None:
     """Generuje plik .ics (iCalendar) zgodny z RFC 5545 i Google Calendar.
+
+    Odfiltrowane frakcje trafiaja do pliku jako odwolane (STATUS:CANCELLED),
+    a nie sa pomijane - inaczej czytniki potrafia trzymac je jeszcze dlugo.
 
     Args:
         dozwolone: lista identyfikatorów frakcji do uwzględnienia. Jeśli None,
@@ -545,13 +548,8 @@ def generuj_ics(dozwolone: list[str] | None = None) -> str | None:
     if dozwolone is None:
         dozwolone = [f["id"] for f in dane.get("frakcje", [])]
 
-    # Filtruj pozycje
-    pozycje = [
-        (o["data"], fr["id"])
-        for o in dane["odbiory"]
-        for fr in o["frakcje"]
-        if fr["id"] in dozwolone
-    ]
+    # Bierzemy WSZYSTKIE pozycje - filtr decyduje tylko o statusie wydarzenia
+    pozycje = [(o["data"], fr["id"]) for o in dane["odbiory"] for fr in o["frakcje"]]
     if not pozycje:
         return None
 
@@ -566,12 +564,16 @@ def generuj_ics(dozwolone: list[str] | None = None) -> str | None:
             "data": data,
             "summary": f"Odbiór: {nazwa_frakcji}",
             "opis": opis,
+            "odwolane": frakcja_id not in dozwolone,
         })
 
+    czynne = sum(1 for w in wydarzenia if not w["odwolane"])
     nazwy_frakcji = [FRAKCJE_WG_ID.get(fid, {}).get("nazwa", fid) for fid in dozwolone]
-    dodaj_log(f"Wyeksportowano plik .ics: {len(pozycje)} terminów (frakcje: {', '.join(nazwy_frakcji)})")
+    dodaj_log(f"Wyeksportowano plik .ics: {czynne} terminów czynnych, "
+              f"{len(wydarzenia) - czynne} odwołanych (frakcje: {', '.join(nazwy_frakcji)})")
 
-    return ical.zbuduj(CALENDAR_NAME, "-//Harmonogram Wywozu//Jeziorowskie//PL", wydarzenia)
+    return ical.zbuduj(CALENDAR_NAME, "-//Harmonogram Wywozu//Jeziorowskie//PL",
+                       wydarzenia, sekwencja=sekwencja)
 
 
 # --- publikacja do GitHub Gist ---
@@ -595,21 +597,27 @@ def publikuj_do_gist(token: str | None = None, dozwolone: list[str] | None = Non
 
     Zwraca słownik ze statusem, stałym adresem raw_url i identyfikatorem Gista.
     """
-    ics_content = generuj_ics(dozwolone)
+    plik_cfg = _plik_gist_config()
+    # Numer wersji musi rosnac przy kazdej publikacji, inaczej czytnik moze
+    # zignorowac zmiane statusu wydarzenia.
+    seq = gist.nastepna_sekwencja(plik_cfg)
+
+    ics_content = generuj_ics(dozwolone, sekwencja=seq)
     if not ics_content:
         raise Exception("Brak danych harmonogramu do wyeksportowania.")
 
     # Zapisujemy rozwinieta liste - "None" znaczy "wszystkie", a panel musi
     # miec z czym porownac biezace filtry.
-    uzyte = list(dozwolone) if dozwolone else [f["id"] for f in FRAKCJE]
+    uzyte = [f["id"] for f in FRAKCJE] if dozwolone is None else list(dozwolone)
 
     wynik = gist.publikuj(
-        plik_konfiguracyjny=_plik_gist_config(),
+        plik_konfiguracyjny=plik_cfg,
         nazwa_pliku="harmonogram-jeziorowskie.ics",
         opis="Harmonogram wywozu odpadów - Jeziorowskie (iCalendar)",
         tresc=ics_content,
         token=token,
         frakcje=uzyte,
+        sekwencja=seq,
     )
     dodaj_log(f"Zaktualizowano GitHub Gist: {wynik.get('raw_url')}")
     return wynik

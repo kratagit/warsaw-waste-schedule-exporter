@@ -35,7 +35,7 @@ def token_ze_srodowiska() -> str:
 def wczytaj_config(plik: str) -> dict:
     """Wczytuje stan publikacji (gist_id, raw_url, last_updated) i token."""
     cfg = {"token": "", "token_source": "none", "gist_id": "",
-           "raw_url": "", "last_updated": "", "frakcje": []}
+           "raw_url": "", "last_updated": "", "frakcje": [], "sekwencja": 0}
 
     if os.path.exists(plik):
         try:
@@ -98,9 +98,22 @@ def wywolaj_api(url: str, token: str, method: str = "GET",
         raise Exception(f"Brak połączenia z GitHub ({e.reason})") from e
 
 
+def nastepna_sekwencja(plik: str) -> int:
+    """Zwraca numer wersji dla najblizszej publikacji (poprzedni + 1).
+
+    Numer musi rosnac monotonicznie, zeby czytniki przyjmowaly kazda zmiane -
+    takze przywrocenie frakcji, ktora wczesniej byla odwolana.
+    """
+    try:
+        return int(wczytaj_config(plik).get("sekwencja", 0)) + 1
+    except (TypeError, ValueError):
+        return 1
+
+
 def publikuj(plik_konfiguracyjny: str, nazwa_pliku: str, opis: str,
              tresc: str, token: str | None = None,
-             frakcje: list[str] | None = None) -> dict:
+             frakcje: list[str] | None = None,
+             sekwencja: int | None = None) -> dict:
     """Tworzy lub aktualizuje niepubliczny Gist z podana trescia.
 
     Args:
@@ -148,6 +161,8 @@ def publikuj(plik_konfiguracyjny: str, nazwa_pliku: str, opis: str,
     teraz = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cfg.update({"token": tok, "gist_id": gist_id, "raw_url": raw_url,
                 "last_updated": teraz, "frakcje": sorted(frakcje or [])})
+    if sekwencja is not None:
+        cfg["sekwencja"] = sekwencja
     zapisz_config(plik_konfiguracyjny, cfg)
 
     return {

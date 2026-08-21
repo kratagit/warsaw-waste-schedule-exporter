@@ -50,10 +50,27 @@ def slug(tekst: str) -> str:
     return "".join(z if z.isalnum() else "-" for z in tekst).strip("-")
 
 
-def zbuduj(nazwa_kalendarza: str, prodid: str, wydarzenia: list[dict]) -> str:
+#: Jak czesto klient ma odpytywac kanal. Google to ignoruje i odswieza po
+#: swojemu (nawet do doby), ale Apple Calendar, Thunderbird i Outlook - nie.
+ODSWIEZANIE = "PT6H"
+
+
+def zbuduj(nazwa_kalendarza: str, prodid: str, wydarzenia: list[dict],
+           sekwencja: int = 0) -> str:
     """Skleja kompletny plik .ics z listy wydarzen calodniowych.
 
-    Kazde wydarzenie to slownik: uid, data (datetime.date), summary, opis.
+    Kazde wydarzenie to slownik: uid, data (datetime.date), summary, opis
+    oraz opcjonalne "odwolane".
+
+    Odfiltrowane frakcje NIE sa pomijane, tylko oznaczane jako odwolane
+    (STATUS:CANCELLED). Samo znikniecie wpisu z kanalu jest dla czytnikow slaba
+    przeslanka - Google potrafi trzymac takie wydarzenia jeszcze dlugo. Jawne
+    odwolanie to polecenie, nie domysl.
+
+    Args:
+        sekwencja: numer wersji nadawany wszystkim wydarzeniom. Musi rosnac przy
+                   kazdej publikacji, inaczej czytnik moze zignorowac zmiane -
+                   zarowno odwolanie, jak i pozniejsze przywrocenie frakcji.
     """
     now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
@@ -65,6 +82,8 @@ def zbuduj(nazwa_kalendarza: str, prodid: str, wydarzenia: list[dict]) -> str:
         "METHOD:PUBLISH",
         f"X-WR-CALNAME:{escapuj(nazwa_kalendarza)}",
         "X-WR-TIMEZONE:Europe/Warsaw",
+        f"REFRESH-INTERVAL;VALUE=DURATION:{ODSWIEZANIE}",
+        f"X-PUBLISHED-TTL:{ODSWIEZANIE}",
     ]
 
     for w in wydarzenia:
@@ -74,11 +93,12 @@ def zbuduj(nazwa_kalendarza: str, prodid: str, wydarzenia: list[dict]) -> str:
             "BEGIN:VEVENT",
             f"UID:{w['uid']}",
             f"DTSTAMP:{now_utc}",
+            f"SEQUENCE:{sekwencja}",
             f"DTSTART;VALUE=DATE:{start.strftime('%Y%m%d')}",
             f"DTEND;VALUE=DATE:{koniec.strftime('%Y%m%d')}",
             f"SUMMARY:{escapuj(w['summary'])}",
             f"DESCRIPTION:{escapuj(w.get('opis', ''))}",
-            "STATUS:CONFIRMED",
+            "STATUS:CANCELLED" if w.get("odwolane") else "STATUS:CONFIRMED",
             "TRANSP:TRANSPARENT",
             "END:VEVENT",
         ])
