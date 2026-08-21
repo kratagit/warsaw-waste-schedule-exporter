@@ -78,7 +78,11 @@ os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # Pozwala na logowanie bez HTTPS
 # --- KONFIGURACJA ---
 TARGET_URL = "https://warszawa19115.pl/harmonogramy-wywozu-odpadow"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
-CALENDAR_NAME = "Wywóz Śmieci"
+CALENDAR_NAME = "Wywóz Śmieci (Warszawa)"
+#: Nazwa uzywana, zanim doszedl drugi region. Gdy nie ma jeszcze kalendarza pod
+#: nowa nazwa, a istnieje stary, zmieniamy mu nazwe - inaczej powstalby duplikat
+#: i dotychczasowe wydarzenia zostalyby w osieroconym kalendarzu.
+CALENDAR_NAME_STARA = "Wywóz Śmieci"
 # Sciezki plikow ze stanem mozna przestawic zmiennymi srodowiskowymi - w
 # kontenerze wskazujemy na /app/data, zeby przezyly aktualizacje obrazu.
 # Bez zmiennych zachowanie jest takie jak dotad (pliki obok app.py).
@@ -98,13 +102,16 @@ MONTH_MAP = {
     'lipiec': 7, 'sierpień': 8, 'wrzesień': 9, 'październik': 10, 'listopad': 11, 'grudzień': 12
 }
 
+#: Kolory wydarzen w Kalendarzu Google - zgodne z polskim kodem barwnym
+#: pojemnikow. Bio nie ma w Google brazu, wiec dostaje najblizszy pomaranczowy.
+#: colorId Google: 2=Sage, 5=Banana, 6=Tangerine, 7=Peacock, 8=Graphite, 10=Basil.
 WASTE_COLORS = {
-    "Papier": "7", 
-    "Metale i tworzywa sztuczne": "5", 
-    "Szkło": "10",
-    "Bio": "8", 
-    "Zmieszane": "8", 
-    "Zielone": "2"
+    "Papier": "7",                       # niebieski
+    "Metale i tworzywa sztuczne": "5",   # zolty
+    "Szkło": "10",                       # zielony
+    "Bio": "6",                          # pomaranczowy (zamiast brazu)
+    "Zmieszane": "8",                    # czarny / grafitowy
+    "Zielone": "2",                      # jasnozielony
 }
 
 # --- GLOBALNY STAN POSTĘPU ---
@@ -375,14 +382,24 @@ def send_schedule_to_calendar(service_google, schedule_data, allowed_types, log,
     """
     update_progress(progress_start, "Wysyłanie do Kalendarza...")
     cal_id = None
+    stary_cal_id = None
     page_token = None
     while True:
         clist = service_google.calendarList().list(pageToken=page_token).execute()
         for e in clist['items']:
             if e['summary'] == CALENDAR_NAME: cal_id = e['id']; break
+            if e['summary'] == CALENDAR_NAME_STARA: stary_cal_id = e['id']
         if cal_id: break
         page_token = clist.get('nextPageToken')
         if not page_token: break
+
+    if not cal_id and stary_cal_id:
+        # Kalendarz z czasow przed podzialem na regiony - zmieniamy mu nazwe,
+        # zeby dotychczasowe wydarzenia zostaly tam, gdzie sa.
+        service_google.calendars().patch(calendarId=stary_cal_id,
+                                         body={'summary': CALENDAR_NAME}).execute()
+        cal_id = stary_cal_id
+        log(f"Zmieniono nazwę kalendarza na '{CALENDAR_NAME}'.")
 
     if not cal_id:
         cal_id = service_google.calendars().insert(body={'summary': CALENDAR_NAME, 'timeZone': 'Europe/Warsaw'}).execute()['id']
