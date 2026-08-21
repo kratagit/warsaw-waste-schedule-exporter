@@ -171,13 +171,6 @@
                         <span id="calBtnText">Do kalendarza</span>
                     </button>
 
-                    <!-- EKSPORT DO PLIKU .ICS -->
-                    <button id="icsBtn" onclick="exportIcs()"
-                            class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500 py-3 rounded-lg transition-all flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
-                        <i class="fas fa-file-export text-blue-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
-                        <span>Eksport .ics</span>
-                    </button>
-
                     <!-- STAŁY LINK SUBSKRYPCJI (GitHub Gist) -->
                     <button id="urlBtn" onclick="copyCalendarUrl()"
                             class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500 py-3 rounded-lg transition-all flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group" title="Kopiuje link URL do wklejenia w Google Calendar (Z adresu URL)">
@@ -300,10 +293,10 @@
                     </div>
 
                     <!-- Przyciski (układ jak w panelu Warszawy z dodanym Link URL) -->
-                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 relative z-10">
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 relative z-10">
                         <!-- SYNCHRONIZACJA: pobiera PDF ze strony gminy i od razu go odczytuje -->
                         <button id="jezRunBtn" onclick="handleJezMainButton()"
-                                class="col-span-2 sm:col-span-3 md:col-span-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
+                                class="col-span-2 sm:col-span-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
                             <i class="fas fa-circle-notch fa-spin hidden" id="jezBtnSpinner"></i>
                             <span id="jezBtnIcon"><i class="fas fa-sync-alt text-lg group-hover:rotate-180 transition-transform duration-700"></i></span>
                             <span id="jezBtnText">Synchronizuj</span>
@@ -315,13 +308,6 @@
                             <i class="fas fa-circle-notch fa-spin hidden" id="jezCalSpinner"></i>
                             <i id="jezCalIcon" class="fas fa-calendar-plus text-emerald-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
                             <span id="jezCalText">Do kalendarza</span>
-                        </button>
-
-                        <!-- EKSPORT DO PLIKU .ICS -->
-                        <button id="jezIcsBtn" onclick="exportJezIcs()"
-                                class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500 py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
-                            <i class="fas fa-file-export text-blue-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
-                            <span>Eksport .ics</span>
                         </button>
 
                         <!-- LINK DO SUBSKRYPCJI W GOOGLE CALENDAR (Z ADRESU URL) -->
@@ -599,24 +585,6 @@
         document.getElementById('errorAlert').classList.remove('hidden');
     }
 
-    function wybraneTypy() {
-        return Object.keys(syncPreferences).filter(k => syncPreferences[k]);
-    }
-
-    function exportIcs() {
-        if (!currentScheduleData.length) {
-            pokazBlad('Brak wczytanego harmonogramu. Kliknij <b>Synchronizuj</b>, aby pobrać dane.');
-            return;
-        }
-        const typy = wybraneTypy();
-        if (!typy.length) {
-            pokazBlad('Zaznacz przynajmniej jedną frakcję w filtrach po lewej stronie.');
-            return;
-        }
-        document.getElementById('errorAlert').classList.add('hidden');
-        window.location.href = `/api/export.ics?types=${encodeURIComponent(typy.join(','))}`;
-    }
-
     async function copyCalendarUrl() {
         const btn = document.getElementById('urlBtn');
         const icon = document.getElementById('urlIcon');
@@ -640,7 +608,7 @@
                 przywroc();
                 const wiadomosc = (data && data.message) || 'Brak skonfigurowanego tokena w .env';
                 if (wiadomosc.includes('GITHUB_GIST_TOKEN')) {
-                    pokazBlad('Stały link subskrypcji wymaga klucza <code>GITHUB_GIST_TOKEN</code> w pliku <code>.env</code> na serwerze.<br>W międzyczasie możesz pobrać plik kalendarza przyciskiem <b>Eksport .ics</b>.');
+                    pokazBlad('Stały link subskrypcji wymaga klucza <code>GITHUB_GIST_TOKEN</code> w pliku <code>.env</code> na serwerze.<br>Zanim go dodasz, terminy możesz wysłać przyciskiem <b>Do kalendarza</b>.');
                 } else {
                     pokazBlad(wiadomosc);
                 }
@@ -1251,9 +1219,6 @@
             warn.classList.add('hidden');
         }
 
-        const maDane = !!(d && d.odbiory && d.odbiory.length);
-        const icsBtn = document.getElementById('jezIcsBtn');
-        if (icsBtn) icsBtn.disabled = !maDane;
         document.getElementById('jezPdfBtn').disabled = !d.pdf_dostepny;
         updateJezCount();
         renderJezUpcoming(d);
@@ -1570,28 +1535,6 @@
 
     // --- pozostale akcje ---
 
-    function exportJezIcs() {
-        if (!jezCurrent) {
-            pokazJezBlad('Brak wczytanego harmonogramu. Kliknij <b>Synchronizuj</b>, aby pobrać dane.');
-            return;
-        }
-        const dozwolone = jezWybraneFrakcje();
-        if (!dozwolone.length) {
-            pokazJezBlad('Zaznacz przynajmniej jedną frakcję w filtrach po lewej stronie.');
-            return;
-        }
-        const params = new URLSearchParams();
-        params.set('types', dozwolone.join(','));
-        window.location.href = `/api/jeziorowskie/export.ics?${params.toString()}`;
-        setTimeout(async () => {
-            try {
-                const res = await fetch('/api/jeziorowskie/logs');
-                const data = await res.json();
-                if (data.logs && data.logs.length) jezLogs = data.logs;
-            } catch (e) {}
-        }, 1000);
-    }
-
     function openJezPdf() {
         if (!jezCurrent) return;
         window.open(`/api/jeziorowskie/pdf?t=${Date.now()}`, '_blank');
@@ -1632,7 +1575,7 @@
                 if (message.includes('GITHUB_GIST_TOKEN') || message.includes('token')) {
                     pokazJezWarn(
                         'Subskrypcja URL wymaga konfiguracji',
-                        'Aby korzystać ze stałego linku subskrypcji do Google Calendar, dodaj klucz <code>GITHUB_GIST_TOKEN</code> w pliku <code>.env</code> na serwerze.<br class="mb-1">W międzyczasie możesz pobrać plik kalendarza klikając przycisk <b>Eksport .ics</b>.'
+                        'Aby korzystać ze stałego linku subskrypcji do Google Calendar, dodaj klucz <code>GITHUB_GIST_TOKEN</code> w pliku <code>.env</code> na serwerze.<br class="mb-1">Zanim go dodasz, terminy możesz wysłać przyciskiem <b>Do kalendarza</b>.'
                     );
                 } else {
                     pokazJezBlad(message);
