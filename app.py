@@ -8,7 +8,7 @@ import glob
 import threading
 import math
 import fitz  # PyMuPDF
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory, Response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory
 
 # Harmonogram gminy Stare Juchy (Jeziorowskie) - modul niezalezny od czesci warszawskiej
 import jeziorowskie
@@ -78,7 +78,11 @@ os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # Pozwala na logowanie bez HTTPS
 # --- KONFIGURACJA ---
 TARGET_URL = "https://warszawa19115.pl/harmonogramy-wywozu-odpadow"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
-CALENDAR_NAME = "Wywóz Śmieci"
+CALENDAR_NAME = "Wywóz Śmieci (Warszawa)"
+#: Nazwa uzywana, zanim doszedl drugi region. Gdy nie ma jeszcze kalendarza pod
+#: nowa nazwa, a istnieje stary, zmieniamy mu nazwe - inaczej powstalby duplikat
+#: i dotychczasowe wydarzenia zostalyby w osieroconym kalendarzu.
+CALENDAR_NAME_STARA = "Wywóz Śmieci"
 # Sciezki plikow ze stanem mozna przestawic zmiennymi srodowiskowymi - w
 # kontenerze wskazujemy na /app/data, zeby przezyly aktualizacje obrazu.
 # Bez zmiennych zachowanie jest takie jak dotad (pliki obok app.py).
@@ -98,13 +102,16 @@ MONTH_MAP = {
     'lipiec': 7, 'sierpień': 8, 'wrzesień': 9, 'październik': 10, 'listopad': 11, 'grudzień': 12
 }
 
+#: Kolory wydarzen w Kalendarzu Google - zgodne z polskim kodem barwnym
+#: pojemnikow. Bio nie ma w Google brazu, wiec dostaje najblizszy pomaranczowy.
+#: colorId Google: 2=Sage, 5=Banana, 6=Tangerine, 7=Peacock, 8=Graphite, 10=Basil.
 WASTE_COLORS = {
-    "Papier": "7", 
-    "Metale i tworzywa sztuczne": "5", 
-    "Szkło": "10",
-    "Bio": "8", 
-    "Zmieszane": "8", 
-    "Zielone": "2"
+    "Papier": "7",                       # niebieski
+    "Metale i tworzywa sztuczne": "5",   # zolty
+    "Szkło": "10",                       # zielony
+    "Bio": "6",                          # pomaranczowy (zamiast brazu)
+    "Zmieszane": "8",                    # czarny / grafitowy
+    "Zielone": "2",                      # jasnozielony
 }
 
 # --- GLOBALNY STAN POSTĘPU ---
@@ -356,12 +363,17 @@ def publikuj_warszawe_do_gist(token=None, allowed_types=None):
     if not ics_text:
         raise Exception("Brak danych harmonogramu do wyeksportowania.")
 
+    # Zapisujemy rozwinieta liste - "None" znaczy "wszystkie", a panel musi
+    # miec z czym porownac biezace filtry.
+    uzyte = list(allowed_types) if allowed_types else list(WASTE_COLORS.keys())
+
     return gist.publikuj(
         plik_konfiguracyjny=_plik_gist_warszawa(),
         nazwa_pliku="harmonogram-warszawa.ics",
         opis="Harmonogram wywozu odpadów - Warszawa (iCalendar)",
         tresc=ics_text,
         token=token,
+        frakcje=uzyte,
     )
 
 # --- PROCES SYNCHRONIZACJI ---
@@ -375,14 +387,24 @@ def send_schedule_to_calendar(service_google, schedule_data, allowed_types, log,
     """
     update_progress(progress_start, "Wysyłanie do Kalendarza...")
     cal_id = None
+    stary_cal_id = None
     page_token = None
     while True:
         clist = service_google.calendarList().list(pageToken=page_token).execute()
         for e in clist['items']:
             if e['summary'] == CALENDAR_NAME: cal_id = e['id']; break
+            if e['summary'] == CALENDAR_NAME_STARA: stary_cal_id = e['id']
         if cal_id: break
         page_token = clist.get('nextPageToken')
         if not page_token: break
+
+    if not cal_id and stary_cal_id:
+        # Kalendarz z czasow przed podzialem na regiony - zmieniamy mu nazwe,
+        # zeby dotychczasowe wydarzenia zostaly tam, gdzie sa.
+        service_google.calendars().patch(calendarId=stary_cal_id,
+                                         body={'summary': CALENDAR_NAME}).execute()
+        cal_id = stary_cal_id
+        log(f"Zmieniono nazwę kalendarza na '{CALENDAR_NAME}'.")
 
     if not cal_id:
         cal_id = service_google.calendars().insert(body={'summary': CALENDAR_NAME, 'timeZone': 'Europe/Warsaw'}).execute()['id']
@@ -784,21 +806,6 @@ def save_address():
 @app.route('/api/last-state', methods=['GET'])
 def last_state(): return jsonify(load_state())
 
-@app.route('/api/export.ics', methods=['GET'])
-def export_ics():
-    """Eksportuje warszawski harmonogram do pliku .ics (iCalendar)."""
-    param = request.args.get('types')
-    allowed = [t.strip() for t in param.split(',') if t.strip()] if param else None
-
-    ics_text = generuj_ics_warszawa(allowed)
-    if not ics_text:
-        return jsonify({"status": "error",
-                        "message": "Brak danych harmonogramu do wyeksportowania"}), 404
-
-    response = Response(ics_text, mimetype="text/calendar")
-    response.headers["Content-Disposition"] = 'attachment; filename="harmonogram-warszawa.ics"'
-    return response
-
 @app.route('/api/gist-config', methods=['GET'])
 def warszawa_gist_config():
     """Zwraca stan konfiguracji GitHub Gist dla Warszawy (bez ujawniania tokenu)."""
@@ -823,16 +830,20 @@ def warszawa_publish_gist():
 
 @app.route('/api/calendar-url', methods=['GET'])
 def warszawa_calendar_url():
-    """Zwraca staly link subskrypcji .ics, generujac go w razie potrzeby."""
+    """Przepisuje Gist biezacymi filtrami i zwraca staly link subskrypcji.
+
+    Publikujemy przy kazdym wywolaniu, bo filtry mogly sie zmienic od ostatniego
+    razu, a adres pozostaje ten sam - Google zobaczy nowa tresc pod starym URL.
+    """
+    if not gist.token_ze_srodowiska():
+        return jsonify({"status": "error",
+                        "message": "Brak skonfigurowanego tokena w pliku .env (GITHUB_GIST_TOKEN)."}), 400
+    param = request.args.get('types')
+    allowed = [t.strip() for t in param.split(',') if t.strip()] if param else None
     try:
-        cfg = gist.wczytaj_config(_plik_gist_warszawa())
-        url = cfg.get("raw_url")
-        if not url and gist.token_ze_srodowiska():
-            url = publikuj_warszawe_do_gist().get("raw_url")
-        if not url:
-            return jsonify({"status": "error",
-                            "message": "Brak skonfigurowanego tokena w pliku .env (GITHUB_GIST_TOKEN)."}), 400
-        return jsonify({"status": "success", "url": url})
+        res = publikuj_warszawe_do_gist(allowed_types=allowed)
+        return jsonify({"status": "success", "url": res.get("raw_url"),
+                        "frakcje": res.get("frakcje", [])})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
 
@@ -884,24 +895,6 @@ def jez_pdf():
         return jsonify({"status": "error", "message": "Brak pliku PDF"}), 404
     return send_from_directory(os.path.dirname(sciezka), os.path.basename(sciezka))
 
-@app.route('/api/jeziorowskie/export.ics', methods=['GET'])
-def jez_export_ics():
-    """Eksportuje harmonogram Jeziorowskie do pliku .ics (iCalendar)."""
-    frakcje_param = request.args.get('types')
-    dozwolone = [f.strip() for f in frakcje_param.split(',') if f.strip()] if frakcje_param else None
-
-    ics_text = jeziorowskie.generuj_ics(dozwolone)
-    if not ics_text:
-        return jsonify({"status": "error", "message": "Brak danych harmonogramu do wyeksportowania"}), 404
-
-    dane = jeziorowskie.harmonogram()
-    rok = dane.get("rok", "") if dane else ""
-    filename = f"harmonogram-jeziorowskie-{rok}.ics" if rok else "harmonogram-jeziorowskie.ics"
-
-    response = Response(ics_text, mimetype="text/calendar")
-    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
-    return response
-
 @app.route('/api/jeziorowskie/logs', methods=['GET'])
 def jez_logs():
     """Zwraca listę logów dla regionu Jeziorowskie."""
@@ -947,16 +940,20 @@ def jez_publish_gist():
 
 @app.route('/api/jeziorowskie/calendar-url', methods=['GET'])
 def jez_calendar_url():
-    """Zwraca stały link subskrypcji .ics (z GitHub Gist), generując go w razie potrzeby."""
+    """Przepisuje Gist biezacymi filtrami i zwraca staly link subskrypcji.
+
+    Publikujemy przy kazdym wywolaniu, bo filtry mogly sie zmienic od ostatniego
+    razu, a adres pozostaje ten sam - Google zobaczy nowa tresc pod starym URL.
+    """
+    if not gist.token_ze_srodowiska():
+        return jsonify({"status": "error",
+                        "message": "Brak skonfigurowanego tokena w pliku .env (GITHUB_GIST_TOKEN)."}), 400
+    param = request.args.get('types')
+    dozwolone = [f.strip() for f in param.split(',') if f.strip()] if param else None
     try:
-        cfg = jeziorowskie.wczytaj_gist_config()
-        url = cfg.get("raw_url")
-        if not url and (os.environ.get("GITHUB_GIST_TOKEN") or os.environ.get("GITHUB_TOKEN")):
-            res = jeziorowskie.publikuj_do_gist()
-            url = res.get("raw_url")
-        if not url:
-            return jsonify({"status": "error", "message": "Brak skonfigurowanego tokena w pliku .env (GITHUB_GIST_TOKEN)."}), 400
-        return jsonify({"status": "success", "url": url})
+        res = jeziorowskie.publikuj_do_gist(dozwolone=dozwolone)
+        return jsonify({"status": "success", "url": res.get("raw_url"),
+                        "frakcje": res.get("frakcje", [])})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
 

@@ -149,8 +149,17 @@
 
                 <!-- Error Alert -->
                 <div id="errorAlert" class="hidden mb-6 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 text-red-700 dark:text-red-400 p-4 rounded text-sm relative z-10">
-                    <p class="font-bold mb-1"><i class="fas fa-exclamation-circle mr-2"></i>Wystąpił błąd</p> 
+                    <p class="font-bold mb-1"><i class="fas fa-exclamation-circle mr-2"></i>Wystąpił błąd</p>
                     <span id="errorMessage"></span>
+                </div>
+
+                <!-- Filtry rozjechaly sie z tym, co jest w opublikowanym kalendarzu -->
+                <div id="filtryZmienioneAlert" class="hidden mb-6 bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 text-blue-700 dark:text-blue-300 p-4 rounded text-sm relative z-10 flex items-start gap-3">
+                    <i class="fas fa-circle-info mt-0.5 flex-shrink-0"></i>
+                    <span class="flex-grow">Zmieniłeś filtry, ale kalendarz dodany przez adres URL ma jeszcze stary zestaw frakcji. Kliknij <b>Link URL</b>, aby go zaktualizować.</span>
+                    <button onclick="zamknijFiltryAlert()" title="Zamknij" class="flex-shrink-0 text-blue-400 hover:text-blue-600 dark:hover:text-blue-200 transition-colors">
+                        <i class="fas fa-xmark"></i>
+                    </button>
                 </div>
 
                 <!-- SIATKA PRZYCISKÓW -->
@@ -169,13 +178,6 @@
                         <i class="fas fa-circle-notch fa-spin hidden" id="calBtnSpinner"></i>
                         <i id="calBtnIcon" class="fas fa-calendar-plus text-emerald-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
                         <span id="calBtnText">Do kalendarza</span>
-                    </button>
-
-                    <!-- EKSPORT DO PLIKU .ICS -->
-                    <button id="icsBtn" onclick="exportIcs()"
-                            class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500 py-3 rounded-lg transition-all flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
-                        <i class="fas fa-file-export text-blue-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
-                        <span>Eksport .ics</span>
                     </button>
 
                     <!-- STAŁY LINK SUBSKRYPCJI (GitHub Gist) -->
@@ -235,22 +237,23 @@
             <div class="grid lg:grid-cols-12 gap-6">
 
                 <!-- FILTRY -->
-                <div class="lg:col-span-3 order-2 lg:order-1 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 card-hover flex flex-col fade-in" style="animation-delay: 0.1s">
+                <div class="lg:col-span-4 order-2 lg:order-1 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 card-hover flex flex-col fade-in" style="animation-delay: 0.1s">
                     <div class="flex items-center mb-3 flex-shrink-0">
-                        <i class="fas fa-sliders-h text-blue-500 mr-2 text-base"></i>
-                        <h2 class="text-xs font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Filtry</h2>
+                        <i class="fas fa-sliders-h text-blue-500 mr-3 text-lg"></i>
+                        <h2 class="text-sm font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Filtry</h2>
                     </div>
-                    <!-- na telefonie dwie kolumny obok siebie; na szerokim ekranie
-                         pionowa lista o stalym odstepie.
+                    <!-- Jedna kolumna na kazdej szerokosci - jak w panelu Warszawy.
+                         Przy dwoch kolumnach na telefonie "Metale i tworzywa
+                         sztuczne" bylo ucinane w polowie.
                          BEZ justify-between: karta jest rozciagana przez sasiedni
                          panel sterowania (grid rozciaga oba elementy do tej samej
                          wysokosci), wiec rozkladanie pozycji na cala wysokosc
                          rozjezdzalo liste za kazdym razem, gdy pojawil sie alert. -->
-                    <div id="jezFilters" class="grid grid-cols-2 gap-x-4 gap-y-0.5 lg:flex lg:flex-col lg:gap-y-1"></div>
+                    <div id="jezFilters" class="flex flex-col gap-y-1"></div>
                 </div>
 
                 <!-- PANEL STEROWANIA -->
-                <div class="lg:col-span-9 order-1 lg:order-2 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 card-hover relative overflow-hidden fade-in" style="animation-delay: 0.2s">
+                <div class="lg:col-span-8 order-1 lg:order-2 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 card-hover relative overflow-hidden fade-in" style="animation-delay: 0.2s">
                     <div class="absolute top-0 right-0 -mt-10 -mr-10 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-4 sm:mb-6 pb-4 border-b border-gray-100 dark:border-slate-700 gap-3 sm:gap-4 relative z-10">
@@ -299,11 +302,20 @@
                         <span id="jezStaleMessage"></span>
                     </div>
 
+                    <!-- Filtry rozjechaly sie z tym, co jest w opublikowanym kalendarzu -->
+                    <div id="jezFiltryZmienioneAlert" class="hidden mb-6 bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 text-blue-700 dark:text-blue-300 p-4 rounded text-sm relative z-10 flex items-start gap-3">
+                        <i class="fas fa-circle-info mt-0.5 flex-shrink-0"></i>
+                        <span class="flex-grow">Zmieniłeś filtry, ale kalendarz dodany przez adres URL ma jeszcze stary zestaw frakcji. Kliknij <b>Link URL</b>, aby go zaktualizować.</span>
+                        <button onclick="zamknijJezFiltryAlert()" title="Zamknij" class="flex-shrink-0 text-blue-400 hover:text-blue-600 dark:hover:text-blue-200 transition-colors">
+                            <i class="fas fa-xmark"></i>
+                        </button>
+                    </div>
+
                     <!-- Przyciski (układ jak w panelu Warszawy z dodanym Link URL) -->
-                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 relative z-10">
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 relative z-10">
                         <!-- SYNCHRONIZACJA: pobiera PDF ze strony gminy i od razu go odczytuje -->
                         <button id="jezRunBtn" onclick="handleJezMainButton()"
-                                class="col-span-2 sm:col-span-3 md:col-span-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
+                                class="col-span-2 sm:col-span-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
                             <i class="fas fa-circle-notch fa-spin hidden" id="jezBtnSpinner"></i>
                             <span id="jezBtnIcon"><i class="fas fa-sync-alt text-lg group-hover:rotate-180 transition-transform duration-700"></i></span>
                             <span id="jezBtnText">Synchronizuj</span>
@@ -315,13 +327,6 @@
                             <i class="fas fa-circle-notch fa-spin hidden" id="jezCalSpinner"></i>
                             <i id="jezCalIcon" class="fas fa-calendar-plus text-emerald-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
                             <span id="jezCalText">Do kalendarza</span>
-                        </button>
-
-                        <!-- EKSPORT DO PLIKU .ICS -->
-                        <button id="jezIcsBtn" onclick="exportJezIcs()"
-                                class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500 py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
-                            <i class="fas fa-file-export text-blue-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
-                            <span>Eksport .ics</span>
                         </button>
 
                         <!-- LINK DO SUBSKRYPCJI W GOOGLE CALENDAR (Z ADRESU URL) -->
@@ -486,9 +491,10 @@
         loadAddress();
         initSyncPreferences();
         renderSyncConfig();
-        loadLastState(); 
+        loadLastState();
         checkRunningProcess();
         checkAuthStatus(); // Sprawdź logowanie przy starcie
+        wczytajStanGista(); // czy opublikowany kalendarz zgadza się z filtrami
         
         // Init walidacji
         const addrInput = document.getElementById('addressInput');
@@ -592,29 +598,46 @@
         document.getElementById('calBtnIcon').classList.remove('hidden');
     }
 
-    // --- eksport .ics i staly link subskrypcji (Warszawa) ---
+    // --- staly link subskrypcji (Warszawa) ---
 
     function pokazBlad(wiadomosc) {
         document.getElementById('errorMessage').innerHTML = wiadomosc;
         document.getElementById('errorAlert').classList.remove('hidden');
     }
 
+    // Frakcje, ktore sa w opublikowanym kalendarzu. null = jeszcze nie wiemy
+    // albo link nie istnieje, wiec nie ma czego porownywac.
+    let opublikowaneFrakcje = null;
+    let filtryAlertZamkniety = false;
+
     function wybraneTypy() {
         return Object.keys(syncPreferences).filter(k => syncPreferences[k]);
     }
 
-    function exportIcs() {
-        if (!currentScheduleData.length) {
-            pokazBlad('Brak wczytanego harmonogramu. Kliknij <b>Synchronizuj</b>, aby pobrać dane.');
-            return;
+    const jakoKlucz = (lista) => (lista || []).slice().sort().join('|');
+
+    async function wczytajStanGista() {
+        try {
+            const res = await fetch('/api/gist-config');
+            const cfg = await res.json();
+            opublikowaneFrakcje = cfg.raw_url ? (cfg.frakcje || []) : null;
+        } catch (e) {
+            opublikowaneFrakcje = null;
         }
-        const typy = wybraneTypy();
-        if (!typy.length) {
-            pokazBlad('Zaznacz przynajmniej jedną frakcję w filtrach po lewej stronie.');
-            return;
-        }
-        document.getElementById('errorAlert').classList.add('hidden');
-        window.location.href = `/api/export.ics?types=${encodeURIComponent(typy.join(','))}`;
+        sprawdzZmianeFiltrow();
+    }
+
+    function sprawdzZmianeFiltrow() {
+        const alert = document.getElementById('filtryZmienioneAlert');
+        if (!alert) return;
+        const rozjazd = opublikowaneFrakcje !== null
+            && jakoKlucz(opublikowaneFrakcje) !== jakoKlucz(wybraneTypy());
+        alert.classList.toggle('hidden', !(rozjazd && !filtryAlertZamkniety));
+    }
+
+    function zamknijFiltryAlert() {
+        filtryAlertZamkniety = true;
+        document.getElementById('filtryZmienioneAlert').classList.add('hidden');
     }
 
     async function copyCalendarUrl() {
@@ -625,7 +648,7 @@
 
         btn.disabled = true;
         icon.className = 'fas fa-circle-notch fa-spin text-purple-500 text-lg';
-        text.textContent = 'Pobieranie...';
+        text.textContent = 'Publikowanie...';
 
         const przywroc = () => {
             icon.className = 'fas fa-link text-purple-500 text-lg group-hover:scale-110 transition-transform duration-300';
@@ -634,13 +657,16 @@
         };
 
         try {
-            const res = await fetch('/api/calendar-url');
+            // Wysylamy biezace filtry - serwer przepisuje Gist pod tym samym
+            // adresem, wiec subskrypcja od razu dostaje aktualny zestaw frakcji.
+            const typy = wybraneTypy();
+            const res = await fetch(`/api/calendar-url?types=${encodeURIComponent(typy.join(','))}`);
             const data = await res.json();
             if (!res.ok || !data.url) {
                 przywroc();
                 const wiadomosc = (data && data.message) || 'Brak skonfigurowanego tokena w .env';
                 if (wiadomosc.includes('GITHUB_GIST_TOKEN')) {
-                    pokazBlad('Stały link subskrypcji wymaga klucza <code>GITHUB_GIST_TOKEN</code> w pliku <code>.env</code> na serwerze.<br>W międzyczasie możesz pobrać plik kalendarza przyciskiem <b>Eksport .ics</b>.');
+                    pokazBlad('Stały link subskrypcji wymaga klucza <code>GITHUB_GIST_TOKEN</code> w pliku <code>.env</code> na serwerze.<br>Zanim go dodasz, terminy możesz wysłać przyciskiem <b>Do kalendarza</b>.');
                 } else {
                     pokazBlad(wiadomosc);
                 }
@@ -661,6 +687,11 @@
             }
 
             document.getElementById('errorAlert').classList.add('hidden');
+            // Gist zostal wlasnie przepisany - kalendarz zgadza sie z filtrami.
+            opublikowaneFrakcje = data.frakcje || typy;
+            filtryAlertZamkniety = false;
+            sprawdzZmianeFiltrow();
+
             icon.className = 'fas fa-check text-emerald-500 text-lg';
             text.textContent = 'Skopiowano!';
             setTimeout(przywroc, 2500);
@@ -896,6 +927,11 @@
         syncPreferences[type] = isChecked;
         localStorage.setItem('wasteSyncPrefs', JSON.stringify(syncPreferences));
         if (currentScheduleData.length > 0) renderSchedule(currentScheduleData);
+        // Kazda nowa zmiana filtrow to nowa informacja, wiec zamkniecie banera
+        // wycisza go tylko do nastepnej zmiany - inaczej dalsze zmiany przeszlyby
+        // niezauwazone.
+        filtryAlertZamkniety = false;
+        sprawdzZmianeFiltrow();
     }
 
     function updatePdfButtons(originalAvail, labeledAvail) {
@@ -1140,6 +1176,7 @@
             renderJezFilters();
             await loadJezSchedule();
             checkJezRunning();
+            wczytajStanJezGista();
         } catch (e) {
             console.error('Jeziorowskie init', e);
             pokazJezBlad('Nie udało się wczytać danych harmonogramu.');
@@ -1189,10 +1226,10 @@
             const label = document.createElement('label');
             label.className = "flex items-center gap-2 py-1 px-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition group min-w-0";
             label.innerHTML = `
-                <input type="checkbox" class="w-4 h-4 flex-shrink-0 text-emerald-600 rounded border-gray-300 dark:border-slate-600 focus:ring-emerald-500 dark:bg-slate-800"
+                <input type="checkbox" class="w-5 h-5 flex-shrink-0 text-emerald-600 rounded border-gray-300 dark:border-slate-600 focus:ring-emerald-500 dark:bg-slate-800"
                     ${jezPrefs[f.id] ? 'checked' : ''} onchange="toggleJezPref('${f.id}', this.checked)">
-                <i class="${f.icon} text-gray-400 dark:text-slate-500 text-xs w-4 text-center flex-shrink-0 group-hover:text-emerald-500 transition-colors"></i>
-                <span class="text-xs font-medium text-gray-700 dark:text-gray-200 select-none truncate group-hover:text-gray-900 dark:group-hover:text-white transition-colors" title="${f.nazwa}">${f.nazwa}</span>
+                <i class="${f.icon} text-gray-400 dark:text-slate-500 text-sm w-4 text-center flex-shrink-0 group-hover:text-emerald-500 transition-colors"></i>
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-200 select-none truncate group-hover:text-gray-900 dark:group-hover:text-white transition-colors" title="${f.nazwa}">${f.nazwa}</span>
             `;
             c.appendChild(label);
         });
@@ -1201,6 +1238,11 @@
     function toggleJezPref(id, checked) {
         jezPrefs[id] = checked;
         localStorage.setItem('jezSyncPrefs', JSON.stringify(jezPrefs));
+        // Kazda nowa zmiana filtrow to nowa informacja, wiec zamkniecie banera
+        // wycisza go tylko do nastepnej zmiany - inaczej dalsze zmiany przeszlyby
+        // niezauwazone.
+        jezFiltryAlertZamkniety = false;
+        sprawdzZmianeJezFiltrow();
         if (jezCurrent) {
             renderJezUpcoming(jezCurrent);
             renderJezYear(jezCurrent);
@@ -1251,9 +1293,6 @@
             warn.classList.add('hidden');
         }
 
-        const maDane = !!(d && d.odbiory && d.odbiory.length);
-        const icsBtn = document.getElementById('jezIcsBtn');
-        if (icsBtn) icsBtn.disabled = !maDane;
         document.getElementById('jezPdfBtn').disabled = !d.pdf_dostepny;
         updateJezCount();
         renderJezUpcoming(d);
@@ -1263,6 +1302,36 @@
 
     function jezWybraneFrakcje() {
         return Object.keys(jezPrefs).filter(k => jezPrefs[k]);
+    }
+
+    // Frakcje, ktore sa w opublikowanym kalendarzu. null = link nie istnieje
+    // albo jeszcze nie wiemy, wiec nie ma czego porownywac.
+    let jezOpublikowaneFrakcje = null;
+    let jezFiltryAlertZamkniety = false;
+
+    async function wczytajStanJezGista() {
+        try {
+            const res = await fetch('/api/jeziorowskie/gist-config');
+            const cfg = await res.json();
+            jezOpublikowaneFrakcje = cfg.raw_url ? (cfg.frakcje || []) : null;
+        } catch (e) {
+            jezOpublikowaneFrakcje = null;
+        }
+        sprawdzZmianeJezFiltrow();
+    }
+
+    function sprawdzZmianeJezFiltrow() {
+        const alert = document.getElementById('jezFiltryZmienioneAlert');
+        if (!alert) return;
+        const klucz = (l) => (l || []).slice().sort().join('|');
+        const rozjazd = jezOpublikowaneFrakcje !== null
+            && klucz(jezOpublikowaneFrakcje) !== klucz(jezWybraneFrakcje());
+        alert.classList.toggle('hidden', !(rozjazd && !jezFiltryAlertZamkniety));
+    }
+
+    function zamknijJezFiltryAlert() {
+        jezFiltryAlertZamkniety = true;
+        document.getElementById('jezFiltryZmienioneAlert').classList.add('hidden');
     }
 
     function updateJezCount() {
@@ -1570,28 +1639,6 @@
 
     // --- pozostale akcje ---
 
-    function exportJezIcs() {
-        if (!jezCurrent) {
-            pokazJezBlad('Brak wczytanego harmonogramu. Kliknij <b>Synchronizuj</b>, aby pobrać dane.');
-            return;
-        }
-        const dozwolone = jezWybraneFrakcje();
-        if (!dozwolone.length) {
-            pokazJezBlad('Zaznacz przynajmniej jedną frakcję w filtrach po lewej stronie.');
-            return;
-        }
-        const params = new URLSearchParams();
-        params.set('types', dozwolone.join(','));
-        window.location.href = `/api/jeziorowskie/export.ics?${params.toString()}`;
-        setTimeout(async () => {
-            try {
-                const res = await fetch('/api/jeziorowskie/logs');
-                const data = await res.json();
-                if (data.logs && data.logs.length) jezLogs = data.logs;
-            } catch (e) {}
-        }, 1000);
-    }
-
     function openJezPdf() {
         if (!jezCurrent) return;
         window.open(`/api/jeziorowskie/pdf?t=${Date.now()}`, '_blank');
@@ -1621,18 +1668,21 @@
         if (btn) {
             btn.disabled = true;
             if (icon) icon.className = 'fas fa-circle-notch fa-spin text-purple-500 text-lg';
-            if (text) text.textContent = 'Pobieranie...';
+            if (text) text.textContent = 'Publikowanie...';
         }
 
         try {
-            const res = await fetch('/api/jeziorowskie/calendar-url');
+            // Wysylamy biezace filtry - serwer przepisuje Gist pod tym samym
+            // adresem, wiec subskrypcja od razu dostaje aktualny zestaw frakcji.
+            const dozwolone = jezWybraneFrakcje();
+            const res = await fetch(`/api/jeziorowskie/calendar-url?types=${encodeURIComponent(dozwolone.join(','))}`);
             const data = await res.json();
             if (!res.ok || !data.url) {
                 const message = (data && data.message) || 'Brak skonfigurowanego tokena w .env';
                 if (message.includes('GITHUB_GIST_TOKEN') || message.includes('token')) {
                     pokazJezWarn(
                         'Subskrypcja URL wymaga konfiguracji',
-                        'Aby korzystać ze stałego linku subskrypcji do Google Calendar, dodaj klucz <code>GITHUB_GIST_TOKEN</code> w pliku <code>.env</code> na serwerze.<br class="mb-1">W międzyczasie możesz pobrać plik kalendarza klikając przycisk <b>Eksport .ics</b>.'
+                        'Aby korzystać ze stałego linku subskrypcji do Google Calendar, dodaj klucz <code>GITHUB_GIST_TOKEN</code> w pliku <code>.env</code> na serwerze.<br class="mb-1">Zanim go dodasz, terminy możesz wysłać przyciskiem <b>Do kalendarza</b>.'
                     );
                 } else {
                     pokazJezBlad(message);
@@ -1640,8 +1690,23 @@
                 return;
             }
 
-            await navigator.clipboard.writeText(data.url);
-            
+            // Schowek bywa niedostepny: navigator.clipboard istnieje tylko
+            // w bezpiecznym kontekscie (HTTPS albo localhost), a i tam zapis
+            // moze zostac odrzucony. W obu razach pokazujemy link do recznego
+            // skopiowania - lepsze to niz komunikat bez tresci.
+            try {
+                if (!navigator.clipboard) throw new Error('brak dostępu do schowka');
+                await navigator.clipboard.writeText(data.url);
+            } catch (bladSchowka) {
+                pokazJezBlad(`Nie udało się skopiować automatycznie (${bladSchowka.message}). Skopiuj link ręcznie:<br><code class="break-all select-all">${data.url}</code>`);
+                return;
+            }
+
+            // Gist zostal wlasnie przepisany - kalendarz zgadza sie z filtrami.
+            jezOpublikowaneFrakcje = data.frakcje || dozwolone;
+            jezFiltryAlertZamkniety = false;
+            sprawdzZmianeJezFiltrow();
+
             if (icon) icon.className = 'fas fa-check text-emerald-500 text-lg';
             if (text) text.textContent = 'Skopiowano!';
 

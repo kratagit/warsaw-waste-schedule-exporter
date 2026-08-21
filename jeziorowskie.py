@@ -492,10 +492,14 @@ def pobierz_i_przetworz() -> dict:
             "liczba_odbiorow": dane.get("liczba_odbiorow"),
             "ostrzezenia": dane.get("ostrzezenia", []),
         })
-        # Jeśli skonfigurowano token GitHub w .env, automatycznie aktualizujemy Gist
-        if os.environ.get("GITHUB_GIST_TOKEN") or os.environ.get("GITHUB_TOKEN"):
+        # Jeśli skonfigurowano token GitHub w .env, automatycznie aktualizujemy Gist.
+        # Trzymamy się zestawu frakcji, który był tam ostatnio opublikowany -
+        # inaczej odświeżenie harmonogramu po cichu dopisałoby do subskrypcji
+        # frakcje, które użytkownik wcześniej odfiltrował.
+        if gist.token_ze_srodowiska():
             try:
-                g_res = publikuj_do_gist()
+                poprzednie = wczytaj_gist_config().get("frakcje") or None
+                g_res = publikuj_do_gist(dozwolone=poprzednie)
                 log(f"Zaktualizowano subskrypcję Gist: {g_res.get('raw_url')}")
             except Exception as ge:
                 log(f"Uwaga: Nie udało się zaktualizować GitHub Gist ({ge})")
@@ -595,12 +599,17 @@ def publikuj_do_gist(token: str | None = None, dozwolone: list[str] | None = Non
     if not ics_content:
         raise Exception("Brak danych harmonogramu do wyeksportowania.")
 
+    # Zapisujemy rozwinieta liste - "None" znaczy "wszystkie", a panel musi
+    # miec z czym porownac biezace filtry.
+    uzyte = list(dozwolone) if dozwolone else [f["id"] for f in FRAKCJE]
+
     wynik = gist.publikuj(
         plik_konfiguracyjny=_plik_gist_config(),
         nazwa_pliku="harmonogram-jeziorowskie.ics",
         opis="Harmonogram wywozu odpadów - Jeziorowskie (iCalendar)",
         tresc=ics_content,
         token=token,
+        frakcje=uzyte,
     )
     dodaj_log(f"Zaktualizowano GitHub Gist: {wynik.get('raw_url')}")
     return wynik
