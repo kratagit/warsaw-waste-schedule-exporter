@@ -29,6 +29,30 @@ import urllib.parse
 import urllib.request
 
 
+def _zaladuj_plik_env() -> None:
+    """Wczytuje zmienne środowiskowe z pliku .env w głównym katalogu projektu."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    env_path = os.path.join(base_dir, ".env")
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip("'\"")
+                        if k and k not in os.environ:
+                            os.environ[k] = v
+        except Exception:
+            pass
+
+
+_zaladuj_plik_env()
+
+
 def _bezpieczny_print(msg: str) -> None:
     """Wypisuje komunikat tak, by polskie znaki nie wywrocily watku.
 
@@ -489,6 +513,14 @@ def pobierz_i_przetworz() -> dict:
             "liczba_odbiorow": dane.get("liczba_odbiorow"),
             "ostrzezenia": dane.get("ostrzezenia", []),
         })
+        # Jeśli skonfigurowano token GitHub w .env, automatycznie aktualizujemy Gist
+        if os.environ.get("GITHUB_GIST_TOKEN") or os.environ.get("GITHUB_TOKEN"):
+            try:
+                g_res = publikuj_do_gist()
+                log(f"Zaktualizowano subskrypcję Gist: {g_res.get('raw_url')}")
+            except Exception as ge:
+                log(f"Uwaga: Nie udało się zaktualizować GitHub Gist ({ge})")
+
         _ustaw_postep(100, "Zakończono pomyślnie!", status="finished")
         zapisz_logi(wynik["logs"])
         with _progress_lock:
@@ -619,4 +651,152 @@ def generuj_ics(dozwolone: list[str] | None = None) -> str | None:
 
     linie_folded = [_fold_ical_line(l) for l in linie]
     return "\r\n".join(linie_folded) + "\r\n"
+
+
+# --- publikacja do GitHub Gist ---
+
+def _plik_gist_config() -> str:
+    return os.path.join(DATA_DIR, "gist_config.json")
+
+
+def wczytaj_gist_config() -> dict:
+    """Wczytuje konfigurację publikacji do GitHub Gist."""
+    cfg = {"token": "", "token_source": "none", "gist_id": "", "raw_url": "", "last_updated": ""}
+    
+    # Odczytaj zapisany plik konfiguracyjny (gist_id, raw_url, last_updated)
+    if os.path.exists(_plik_gist_config()):
+        try:
+            with open(_plik_gist_config(), "r", encoding="utf-8") as f:
+                saved = json.load(f)
+                if isinstance(saved, dict):
+                    cfg.update(saved)
+                    if cfg.get("token"):
+                        cfg["token_source"] = "file"
+        except Exception:
+            pass
+
+    # Priorytet ma zmienna środowiskowa (.env / system)
+    env_token = (os.environ.get("GITHUB_GIST_TOKEN") or os.environ.get("GITHUB_TOKEN") or "").strip()
+    if env_token:
+        cfg["token"] = env_token
+        cfg["token_source"] = "env"
+
+    return cfg
+
+
+def zapisz_gist_config(cfg: dict) -> None:
+    """Zapisuje konfigurację publikacji do GitHub Gist."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    # Jeśli token pochodzi z .env, nie zapisujemy go w pliku JSON na dysku
+    do_zapisu = dict(cfg)
+    if os.environ.get("GITHUB_GIST_TOKEN") or os.environ.get("GITHUB_TOKEN"):
+        do_zapisu.pop("token", None)
+    do_zapisu.pop("token_source", None)
+    try:
+        with open(_plik_gist_config(), "w", encoding="utf-8") as f:
+            json.dump(do_zapisu, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _github_api_call(url: str, token: str, method: str = "GET", data: dict | None = None) -> dict:
+    """Wysyła żądanie do GitHub REST API."""
+    headers = {
+        "Authorization": f"Bearer {token.strip()}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "Warsaw-Waste-Schedule-Exporter",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    body_bytes = json.dumps(data).encode("utf-8") if data is not None else None
+    req = urllib.request.Request(url, data=body_bytes, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        err_msg = f"Błąd GitHub API (HTTP {e.code})"
+        try:
+            err_data = json.loads(e.read().decode("utf-8"))
+            if "message" in err_data:
+                err_msg += f": {err_data['message']}"
+        except Exception:
+            pass
+        raise Exception(err_msg) from e
+    except urllib.error.URLError as e:
+        raise Exception(f"Brak połączenia z GitHub ({e.reason})") from e
+
+
+def publikuj_do_gist(token: str | None = None, dozwolone: list[str] | None = None) -> dict:
+    """Publikuje lub aktualizuje niepubliczny plik .ics na GitHub Gist.
+
+    Zwraca słownik ze statusem, stałym adresem raw_url i identyfikatorem Gista.
+    """
+    cfg = wczytaj_gist_config()
+    tok = (token or "").strip() or cfg.get("token", "").strip()
+    if not tok:
+        raise Exception("Wprowadź GitHub Personal Access Token (z uprawnieniem 'gist').")
+
+    ics_content = generuj_ics(dozwolone)
+    if not ics_content:
+        raise Exception("Brak danych harmonogramu do wyeksportowania.")
+
+    filename = "harmonogram-jeziorowskie.ics"
+    payload = {
+        "description": "Harmonogram wywozu odpadów - Jeziorowskie (iCalendar)",
+        "public": False,
+        "files": {
+            filename: {
+                "content": ics_content
+            }
+        }
+    }
+
+    gist_id = cfg.get("gist_id")
+    resp_data = None
+
+    if gist_id:
+        try:
+            resp_data = _github_api_call(
+                f"https://api.github.com/gists/{gist_id}",
+                tok,
+                method="PATCH",
+                data=payload,
+            )
+        except Exception as e:
+            if "404" in str(e) or "Not Found" in str(e):
+                gist_id = None
+            else:
+                raise e
+
+    if not gist_id or not resp_data:
+        resp_data = _github_api_call(
+            "https://api.github.com/gists",
+            tok,
+            method="POST",
+            data=payload,
+        )
+        gist_id = resp_data.get("id")
+
+    owner_login = resp_data.get("owner", {}).get("login", "")
+    if owner_login and gist_id:
+        raw_url = f"https://gist.githubusercontent.com/{owner_login}/{gist_id}/raw/{filename}"
+    else:
+        file_info = resp_data.get("files", {}).get(filename, {})
+        raw_url = file_info.get("raw_url", "")
+
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cfg["token"] = tok
+    cfg["gist_id"] = gist_id
+    cfg["raw_url"] = raw_url
+    cfg["last_updated"] = now_str
+    zapisz_gist_config(cfg)
+
+    dodaj_log(f"Zaktualizowano GitHub Gist: {raw_url}")
+
+    return {
+        "status": "success",
+        "gist_id": gist_id,
+        "raw_url": raw_url,
+        "last_updated": now_str,
+        "message": "Pomyślnie opublikowano kalendarz na GitHub Gist!"
+    }
 

@@ -279,11 +279,11 @@
                         <span id="jezStaleMessage"></span>
                     </div>
 
-                    <!-- Przyciski (układ jak w panelu Warszawy) -->
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10">
+                    <!-- Przyciski (układ jak w panelu Warszawy z dodanym Link URL) -->
+                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 relative z-10">
                         <!-- SYNCHRONIZACJA: pobiera PDF ze strony gminy i od razu go odczytuje -->
                         <button id="jezRunBtn" onclick="handleJezMainButton()"
-                                class="col-span-2 md:col-span-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
+                                class="col-span-2 sm:col-span-3 md:col-span-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 text-sm uppercase tracking-wide group">
                             <i class="fas fa-circle-notch fa-spin hidden" id="jezBtnSpinner"></i>
                             <span id="jezBtnIcon"><i class="fas fa-sync-alt text-lg group-hover:rotate-180 transition-transform duration-700"></i></span>
                             <span id="jezBtnText">Synchronizuj</span>
@@ -302,6 +302,13 @@
                                 class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500 py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group">
                             <i class="fas fa-file-export text-blue-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
                             <span>Eksport .ics</span>
+                        </button>
+
+                        <!-- LINK DO SUBSKRYPCJI W GOOGLE CALENDAR (Z ADRESU URL) -->
+                        <button id="jezUrlBtn" onclick="copyJezCalendarUrl()"
+                                class="col-span-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500 py-3 rounded-lg transition-all flex flex-col md:flex-row items-center justify-center gap-2 text-sm font-medium group" title="Kopiuje link URL do wklejenia w Google Calendar (Z adresu URL)">
+                            <i id="jezUrlIcon" class="fas fa-link text-purple-500 text-lg group-hover:scale-110 transition-transform duration-300"></i>
+                            <span id="jezUrlText">Link URL</span>
                         </button>
 
                         <button id="jezPdfBtn" onclick="openJezPdf()"
@@ -351,10 +358,10 @@
                     <p class="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center justify-center md:justify-start">
                         <i class="fas fa-leaf text-emerald-500 mr-2"></i>
                         Harmonogram Wywozu
-                        <span class="text-[10px] font-normal text-gray-400 dark:text-gray-500 ml-2 border border-gray-200 dark:border-slate-700 px-1.5 py-0.5 rounded">v1.3</span>
+                        <span class="text-[10px] font-normal text-gray-400 dark:text-gray-500 ml-2 border border-gray-200 dark:border-slate-700 px-1.5 py-0.5 rounded">v2.0</span>
                     </p>
                     <p class="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                        Aplikacja nieoficjalna. Dane: <a href="https://warszawa19115.pl" target="_blank" class="hover:text-blue-500 transition-colors">warszawa19115.pl</a>.
+                        Aplikacja nieoficjalna. <span id="footerDataSource">Dane: <a href="https://warszawa19115.pl" target="_blank" class="hover:text-blue-500 transition-colors">warszawa19115.pl</a>.</span>
                     </p>
                 </div>
                 <div class="flex items-center gap-6 text-sm text-gray-500 dark:text-gray-400">
@@ -363,7 +370,7 @@
                         <span class="text-xs">Python & Flask</span>
                     </div>
                     <span class="text-gray-300 dark:text-slate-700">|</span>
-                    <a href="https://github.com/gitzakratami/warsaw_waste_schedule_exporter" target="_blank" class="hover:text-emerald-500 transition-colors flex items-center gap-2 group">
+                    <a href="https://github.com/kratagit/warsaw-waste-schedule-exporter" target="_blank" class="hover:text-emerald-500 transition-colors flex items-center gap-2 group">
                         <i class="fab fa-github text-lg group-hover:rotate-12 transition-transform"></i>
                         <span class="font-medium">GitHub</span>
                     </a>
@@ -1005,6 +1012,14 @@
             });
         }
 
+        // Aktualizacja źródła danych w stopce
+        const footerSrc = document.getElementById('footerDataSource');
+        if (footerSrc) {
+            footerSrc.innerHTML = jest
+                ? 'Dane: <a href="https://stare-juchy.pl" target="_blank" class="hover:text-emerald-500 transition-colors">stare-juchy.pl</a> (KOMA).'
+                : 'Dane: <a href="https://warszawa19115.pl" target="_blank" class="hover:text-blue-500 transition-colors">warszawa19115.pl</a>.';
+        }
+
         if (jest && !cichy && !jezCurrent) initJeziorowskie();
     }
 
@@ -1035,8 +1050,28 @@
 
     function pokazJezBlad(tekst) {
         const box = document.getElementById('jezErrorAlert');
-        box.classList.remove('hidden');
-        document.getElementById('jezErrorMessage').textContent = tekst;
+        const msg = document.getElementById('jezErrorMessage');
+        if (box && msg) {
+            document.getElementById('jezWarnAlert')?.classList.add('hidden');
+            document.getElementById('jezOkAlert')?.classList.add('hidden');
+            msg.innerHTML = tekst;
+            box.classList.remove('hidden');
+            box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    function pokazJezWarn(tytul, tekst) {
+        const box = document.getElementById('jezWarnAlert');
+        const msg = document.getElementById('jezWarnMessage');
+        if (box && msg) {
+            document.getElementById('jezErrorAlert')?.classList.add('hidden');
+            document.getElementById('jezOkAlert')?.classList.add('hidden');
+            const titleEl = box.querySelector('p');
+            if (titleEl) titleEl.innerHTML = `<i class="fas fa-info-circle mr-2"></i>${tytul}`;
+            msg.innerHTML = tekst;
+            box.classList.remove('hidden');
+            box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
     }
 
     function initJezPrefs() {
@@ -1439,12 +1474,12 @@
 
     function exportJezIcs() {
         if (!jezCurrent) {
-            alert('Brak wczytanego harmonogramu.');
+            pokazJezBlad('Brak wczytanego harmonogramu. Kliknij <b>Synchronizuj</b>, aby pobrać dane.');
             return;
         }
         const dozwolone = jezWybraneFrakcje();
         if (!dozwolone.length) {
-            alert('Zaznacz przynajmniej jedną frakcję.');
+            pokazJezBlad('Zaznacz przynajmniej jedną frakcję w filtrach po lewej stronie.');
             return;
         }
         const params = new URLSearchParams();
@@ -1475,6 +1510,64 @@
         } catch (e) {}
         document.getElementById('logsContent').value = jezLogs.join('\n') || "Brak logów.";
         document.getElementById('logsModal').classList.remove('hidden');
+    }
+
+    // --- link do subskrypcji Google Calendar (Gist) ---
+
+    async function copyJezCalendarUrl() {
+        const btn = document.getElementById('jezUrlBtn');
+        const icon = document.getElementById('jezUrlIcon');
+        const text = document.getElementById('jezUrlText');
+        const origText = text ? text.textContent : '';
+
+        if (btn) {
+            btn.disabled = true;
+            if (icon) icon.className = 'fas fa-circle-notch fa-spin text-purple-500 text-lg';
+            if (text) text.textContent = 'Pobieranie...';
+        }
+
+        try {
+            const res = await fetch('/api/jeziorowskie/calendar-url');
+            const data = await res.json();
+            if (!res.ok || !data.url) {
+                const message = (data && data.message) || 'Brak skonfigurowanego tokena w .env';
+                if (message.includes('GITHUB_GIST_TOKEN') || message.includes('token')) {
+                    pokazJezWarn(
+                        'Subskrypcja URL wymaga konfiguracji',
+                        'Aby korzystać ze stałego linku subskrypcji do Google Calendar, dodaj klucz <code>GITHUB_GIST_TOKEN</code> w pliku <code>.env</code> na serwerze.<br class="mb-1">W międzyczasie możesz pobrać plik kalendarza klikając przycisk <b>Eksport .ics</b>.'
+                    );
+                } else {
+                    pokazJezBlad(message);
+                }
+                return;
+            }
+
+            await navigator.clipboard.writeText(data.url);
+            
+            if (icon) icon.className = 'fas fa-check text-emerald-500 text-lg';
+            if (text) text.textContent = 'Skopiowano!';
+
+            document.getElementById('jezErrorAlert')?.classList.add('hidden');
+            document.getElementById('jezWarnAlert')?.classList.add('hidden');
+            document.getElementById('jezOkAlert')?.classList.remove('hidden');
+            document.getElementById('jezOkMessage').innerHTML = '<b>Skopiowano link do schowka!</b> Wklej go w Google Calendar: <i>Inne kalendarze ➕ &rarr; Z adresu URL</i>.';
+            setTimeout(() => { document.getElementById('jezOkAlert')?.classList.add('hidden'); }, 6000);
+
+            setTimeout(() => {
+                if (icon) icon.className = 'fas fa-link text-purple-500 text-lg group-hover:scale-110 transition-transform duration-300';
+                if (text) text.textContent = origText;
+                if (btn) btn.disabled = false;
+            }, 2500);
+
+        } catch (e) {
+            pokazJezBlad('Wystąpił błąd podczas pobierania linku: ' + e.message);
+        } finally {
+            if (btn && btn.disabled && (!text || text.textContent !== 'Skopiowano!')) {
+                if (icon) icon.className = 'fas fa-link text-purple-500 text-lg group-hover:scale-110 transition-transform duration-300';
+                if (text) text.textContent = origText;
+                btn.disabled = false;
+            }
+        }
     }
   </script>
 </body>

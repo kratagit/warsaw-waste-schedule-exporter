@@ -757,6 +757,101 @@ def jez_clear_logs():
     jeziorowskie.wyczysc_logi()
     return jsonify({"status": "success"})
 
+@app.route('/api/jeziorowskie/gist-config', methods=['GET'])
+def jez_gist_config():
+    """Zwraca stan konfiguracji GitHub Gist (bez ujawniania tokenu)."""
+    cfg = dict(jeziorowskie.wczytaj_gist_config())
+    tok = cfg.pop("token", "")
+    cfg["has_token"] = bool(tok)
+    return jsonify(cfg)
+
+@app.route('/api/jeziorowskie/publish-gist', methods=['POST'])
+def jez_publish_gist():
+    """Publikuje lub aktualizuje harmonogram w GitHub Gist."""
+    body = request.json or {}
+    token = body.get("token")
+    allowed_types = body.get("allowedTypes")
+    try:
+        res = jeziorowskie.publikuj_do_gist(token=token, dozwolone=allowed_types)
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+@app.route('/api/jeziorowskie/calendar-url', methods=['GET'])
+def jez_calendar_url():
+    """Zwraca stały link subskrypcji .ics (z GitHub Gist), generując go w razie potrzeby."""
+    try:
+        cfg = jeziorowskie.wczytaj_gist_config()
+        url = cfg.get("raw_url")
+        if not url and (os.environ.get("GITHUB_GIST_TOKEN") or os.environ.get("GITHUB_TOKEN")):
+            res = jeziorowskie.publikuj_do_gist()
+            url = res.get("raw_url")
+        if not url:
+            return jsonify({"status": "error", "message": "Brak skonfigurowanego tokena w pliku .env (GITHUB_GIST_TOKEN)."}), 400
+        return jsonify({"status": "success", "url": url})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+
+def get_or_create_ssl_cert():
+    """Tworzy stały lokalny certyfikat SSL dla localhost, aby przeglądarka pamiętała wyjątek."""
+    cert_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "certs")
+    os.makedirs(cert_dir, exist_ok=True)
+    cert_file = os.path.join(cert_dir, "cert.pem")
+    key_file = os.path.join(cert_dir, "key.pem")
+
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        return cert_file, key_file
+
+    try:
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.hazmat.primitives import serialization
+        import ipaddress
+
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+        subject = issuer = x509.Name([
+            x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Waste Schedule Exporter"),
+        ])
+
+        san = x509.SubjectAlternativeName([
+            x509.DNSName("localhost"),
+            x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+        ])
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(issuer)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - datetime.timedelta(days=1))
+            .not_valid_after(now + datetime.timedelta(days=3650))  # 10 lat
+            .add_extension(san, critical=False)
+            .sign(key, hashes.SHA256())
+        )
+
+        with open(key_file, "wb") as f:
+            f.write(key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption()
+            ))
+
+        with open(cert_file, "wb") as f:
+            f.write(cert.public_bytes(serialization.Encoding.PEM))
+
+        return cert_file, key_file
+    except Exception as e:
+        print(f"Nie udało się wygenerować stałego certyfikatu ({e}), używam trybu 'adhoc'")
+        return 'adhoc'
+
+
 if __name__ == '__main__':
-    # ssl_context='adhoc' generuje szybki certyfikat w locie
-    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False, ssl_context='adhoc')
+    # Stały certyfikat lokalny zapobiega wyskakiwaniu ostrzeżeń przeglądarki przy każdym restarcie
+    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False, ssl_context=get_or_create_ssl_cert())
