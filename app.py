@@ -795,7 +795,8 @@ def jez_calendar_url():
 
 def get_or_create_ssl_cert():
     """Tworzy stały lokalny certyfikat SSL dla localhost, aby przeglądarka pamiętała wyjątek."""
-    cert_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "certs")
+    data_dir = os.path.dirname(os.environ.get("CREDENTIALS_FILE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "credentials.json")))
+    cert_dir = os.path.join(data_dir, "certs")
     os.makedirs(cert_dir, exist_ok=True)
     cert_file = os.path.join(cert_dir, "cert.pem")
     key_file = os.path.join(cert_dir, "key.pem")
