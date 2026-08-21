@@ -320,10 +320,13 @@ def _plik_gist_warszawa():
     return os.path.join(katalog, "gist_config_warszawa.json")
 
 
-def generuj_ics_warszawa(allowed_types=None):
+def generuj_ics_warszawa(allowed_types=None, sekwencja=0):
     """Buduje plik .ics z terminow pobranych ze strony 19115.
 
-    Zwraca None, gdy nie ma jeszcze zadnych danych albo filtry odsialy wszystko.
+    Odfiltrowane frakcje trafiaja do pliku jako odwolane (STATUS:CANCELLED),
+    a nie sa pomijane - inaczej czytniki potrafia trzymac je jeszcze dlugo.
+
+    Zwraca None, gdy nie ma jeszcze zadnych danych.
     """
     state = load_state()
     pozycje = state.get("schedule", [])
@@ -339,8 +342,6 @@ def generuj_ics_warszawa(allowed_types=None):
     wydarzenia = []
     for item in pozycje:
         typ = item.get("wasteType", "")
-        if typ not in allowed_types:
-            continue
         # 19115 podaje date slownie ("26 sierpnia") - bez tego nie ma wydarzenia
         data = parse_polish_date(item.get("dateText", ""))
         if not data:
@@ -350,30 +351,38 @@ def generuj_ics_warszawa(allowed_types=None):
             "data": data,
             "summary": f"Odbiór: {typ}",
             "opis": opis,
+            "odwolane": typ not in allowed_types,
         })
 
     if not wydarzenia:
         return None
-    return ical.zbuduj(CALENDAR_NAME, "-//Harmonogram Wywozu//Warszawa//PL", wydarzenia)
+    return ical.zbuduj(CALENDAR_NAME, "-//Harmonogram Wywozu//Warszawa//PL",
+                       wydarzenia, sekwencja=sekwencja)
 
 
 def publikuj_warszawe_do_gist(token=None, allowed_types=None):
     """Publikuje lub aktualizuje warszawski harmonogram jako niepubliczny Gist."""
-    ics_text = generuj_ics_warszawa(allowed_types)
+    plik_cfg = _plik_gist_warszawa()
+    # Numer wersji musi rosnac przy kazdej publikacji, inaczej czytnik moze
+    # zignorowac zmiane statusu wydarzenia.
+    seq = gist.nastepna_sekwencja(plik_cfg)
+
+    ics_text = generuj_ics_warszawa(allowed_types, sekwencja=seq)
     if not ics_text:
         raise Exception("Brak danych harmonogramu do wyeksportowania.")
 
     # Zapisujemy rozwinieta liste - "None" znaczy "wszystkie", a panel musi
     # miec z czym porownac biezace filtry.
-    uzyte = list(allowed_types) if allowed_types else list(WASTE_COLORS.keys())
+    uzyte = list(WASTE_COLORS.keys()) if allowed_types is None else list(allowed_types)
 
     return gist.publikuj(
-        plik_konfiguracyjny=_plik_gist_warszawa(),
+        plik_konfiguracyjny=plik_cfg,
         nazwa_pliku="harmonogram-warszawa.ics",
         opis="Harmonogram wywozu odpadów - Warszawa (iCalendar)",
         tresc=ics_text,
         token=token,
         frakcje=uzyte,
+        sekwencja=seq,
     )
 
 # --- PROCES SYNCHRONIZACJI ---
@@ -838,8 +847,10 @@ def warszawa_calendar_url():
     if not gist.token_ze_srodowiska():
         return jsonify({"status": "error",
                         "message": "Brak skonfigurowanego tokena w pliku .env (GITHUB_GIST_TOKEN)."}), 400
+    # Rozrozniamy brak parametru (None = wszystkie) od pustego wyboru
+    # (odznaczono wszystkie frakcje - wtedy caly kalendarz ma byc odwolany).
     param = request.args.get('types')
-    allowed = [t.strip() for t in param.split(',') if t.strip()] if param else None
+    allowed = None if param is None else [t.strip() for t in param.split(',') if t.strip()]
     try:
         res = publikuj_warszawe_do_gist(allowed_types=allowed)
         return jsonify({"status": "success", "url": res.get("raw_url"),
@@ -948,8 +959,10 @@ def jez_calendar_url():
     if not gist.token_ze_srodowiska():
         return jsonify({"status": "error",
                         "message": "Brak skonfigurowanego tokena w pliku .env (GITHUB_GIST_TOKEN)."}), 400
+    # Rozrozniamy brak parametru (None = wszystkie) od pustego wyboru
+    # (odznaczono wszystkie frakcje - wtedy caly kalendarz ma byc odwolany).
     param = request.args.get('types')
-    dozwolone = [f.strip() for f in param.split(',') if f.strip()] if param else None
+    dozwolone = None if param is None else [f.strip() for f in param.split(',') if f.strip()]
     try:
         res = jeziorowskie.publikuj_do_gist(dozwolone=dozwolone)
         return jsonify({"status": "success", "url": res.get("raw_url"),
