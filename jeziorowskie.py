@@ -531,8 +531,8 @@ def uruchom_pobieranie() -> None:
 def generuj_ics(dozwolone: list[str] | None = None, sekwencja: int = 0) -> str | None:
     """Generuje plik .ics (iCalendar) zgodny z RFC 5545 i Google Calendar.
 
-    Odfiltrowane frakcje trafiaja do pliku jako odwolane (STATUS:CANCELLED),
-    a nie sa pomijane - inaczej czytniki potrafia trzymac je jeszcze dlugo.
+    Odfiltrowane frakcje sa pomijane. Gdy filtr nie przepusci niczego, plik
+    powstaje mimo to - pusty, ale poprawny.
 
     Args:
         dozwolone: lista identyfikatorów frakcji do uwzględnienia. Jeśli None,
@@ -548,10 +548,12 @@ def generuj_ics(dozwolone: list[str] | None = None, sekwencja: int = 0) -> str |
     if dozwolone is None:
         dozwolone = [f["id"] for f in dane.get("frakcje", [])]
 
-    # Bierzemy WSZYSTKIE pozycje - filtr decyduje tylko o statusie wydarzenia
-    pozycje = [(o["data"], fr["id"]) for o in dane["odbiory"] for fr in o["frakcje"]]
-    if not pozycje:
-        return None
+    pozycje = [
+        (o["data"], fr["id"])
+        for o in dane["odbiory"]
+        for fr in o["frakcje"]
+        if fr["id"] in dozwolone
+    ]
 
     opis = f"{dane.get('sektor', '')} - {dane.get('wykaz', '')}".strip(" -")
 
@@ -564,13 +566,11 @@ def generuj_ics(dozwolone: list[str] | None = None, sekwencja: int = 0) -> str |
             "data": data,
             "summary": f"Odbiór: {nazwa_frakcji}",
             "opis": opis,
-            "odwolane": frakcja_id not in dozwolone,
         })
 
-    czynne = sum(1 for w in wydarzenia if not w["odwolane"])
     nazwy_frakcji = [FRAKCJE_WG_ID.get(fid, {}).get("nazwa", fid) for fid in dozwolone]
-    dodaj_log(f"Wyeksportowano plik .ics: {czynne} terminów czynnych, "
-              f"{len(wydarzenia) - czynne} odwołanych (frakcje: {', '.join(nazwy_frakcji)})")
+    dodaj_log(f"Wyeksportowano plik .ics: {len(wydarzenia)} terminów "
+              f"(frakcje: {', '.join(nazwy_frakcji) or 'brak - kalendarz pusty'})")
 
     return ical.zbuduj(CALENDAR_NAME, "-//Harmonogram Wywozu//Jeziorowskie//PL",
                        wydarzenia, sekwencja=sekwencja)

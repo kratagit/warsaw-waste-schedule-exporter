@@ -59,18 +59,17 @@ def zbuduj(nazwa_kalendarza: str, prodid: str, wydarzenia: list[dict],
            sekwencja: int = 0) -> str:
     """Skleja kompletny plik .ics z listy wydarzen calodniowych.
 
-    Kazde wydarzenie to slownik: uid, data (datetime.date), summary, opis
-    oraz opcjonalne "odwolane".
+    Kazde wydarzenie to slownik: uid, data (datetime.date), summary, opis.
 
-    Odfiltrowane frakcje NIE sa pomijane, tylko oznaczane jako odwolane
-    (STATUS:CANCELLED). Samo znikniecie wpisu z kanalu jest dla czytnikow slaba
-    przeslanka - Google potrafi trzymac takie wydarzenia jeszcze dlugo. Jawne
-    odwolanie to polecenie, nie domysl.
+    Odfiltrowane frakcje NIE moga tu trafic - lista musi byc juz przefiltrowana.
+    Probowalismy zostawiac je z STATUS:CANCELLED, licząc ze czytnik potraktuje to
+    jako polecenie usuniecia. Google ignoruje ten status w subskrybowanych
+    kanalach i pokazuje takie wydarzenia jak zwykle, wiec skutek byl odwrotny do
+    zamierzonego - w kalendarzu ladowal komplet frakcji.
 
     Args:
-        sekwencja: numer wersji nadawany wszystkim wydarzeniom. Musi rosnac przy
-                   kazdej publikacji, inaczej czytnik moze zignorowac zmiane -
-                   zarowno odwolanie, jak i pozniejsze przywrocenie frakcji.
+        sekwencja: numer wersji nadawany wszystkim wydarzeniom. Rosnie przy
+                   kazdej publikacji, zeby czytnik przyjmowal kolejne wersje.
     """
     now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
@@ -98,7 +97,7 @@ def zbuduj(nazwa_kalendarza: str, prodid: str, wydarzenia: list[dict],
             f"DTEND;VALUE=DATE:{koniec.strftime('%Y%m%d')}",
             f"SUMMARY:{escapuj(w['summary'])}",
             f"DESCRIPTION:{escapuj(w.get('opis', ''))}",
-            "STATUS:CANCELLED" if w.get("odwolane") else "STATUS:CONFIRMED",
+            "STATUS:CONFIRMED",
             "TRANSP:TRANSPARENT",
             "END:VEVENT",
         ])

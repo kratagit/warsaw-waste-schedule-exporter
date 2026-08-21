@@ -323,8 +323,9 @@ def _plik_gist_warszawa():
 def generuj_ics_warszawa(allowed_types=None, sekwencja=0):
     """Buduje plik .ics z terminow pobranych ze strony 19115.
 
-    Odfiltrowane frakcje trafiaja do pliku jako odwolane (STATUS:CANCELLED),
-    a nie sa pomijane - inaczej czytniki potrafia trzymac je jeszcze dlugo.
+    Odfiltrowane frakcje sa pomijane. Gdy filtr nie przepusci niczego, plik
+    powstaje mimo to - pusty, ale poprawny. Dla czytnika to informacja "nic tu
+    nie ma", a wyjatek zostawilby w subskrypcji stara tresc.
 
     Zwraca None, gdy nie ma jeszcze zadnych danych.
     """
@@ -342,6 +343,8 @@ def generuj_ics_warszawa(allowed_types=None, sekwencja=0):
     wydarzenia = []
     for item in pozycje:
         typ = item.get("wasteType", "")
+        if typ not in allowed_types:
+            continue
         # 19115 podaje date slownie ("26 sierpnia") - bez tego nie ma wydarzenia
         data = parse_polish_date(item.get("dateText", ""))
         if not data:
@@ -351,11 +354,8 @@ def generuj_ics_warszawa(allowed_types=None, sekwencja=0):
             "data": data,
             "summary": f"Odbiór: {typ}",
             "opis": opis,
-            "odwolane": typ not in allowed_types,
         })
 
-    if not wydarzenia:
-        return None
     return ical.zbuduj(CALENDAR_NAME, "-//Harmonogram Wywozu//Warszawa//PL",
                        wydarzenia, sekwencja=sekwencja)
 
