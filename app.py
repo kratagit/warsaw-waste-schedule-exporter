@@ -28,6 +28,44 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 
+# --- wczytanie pliku .env ---
+# Docker Compose podaje zmienne z .env sam, ale przy uruchomieniu "python app.py"
+# (albo golym "docker run") nikt tego nie robi. Czytamy wiec plik sami - bez
+# dodatkowych bibliotek. Zmienne juz ustawione w srodowisku maja priorytet.
+def _wczytaj_plik_env(sciezka: str | None = None) -> None:
+    sciezka = sciezka or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.exists(sciezka):
+        return
+    try:
+        with open(sciezka, "r", encoding="utf-8-sig") as f:
+            for linia in f:
+                linia = linia.strip()
+                if not linia or linia.startswith("#") or "=" not in linia:
+                    continue
+                if linia.startswith("export "):
+                    linia = linia[len("export "):].lstrip()
+                klucz, _, wartosc = linia.partition("=")
+                klucz = klucz.strip()
+                wartosc = wartosc.strip()
+                # zdejmujemy cudzyslowy, ktore ludzie odruchowo dopisuja w .env
+                if len(wartosc) >= 2 and wartosc[0] == wartosc[-1] and wartosc[0] in "\"'":
+                    wartosc = wartosc[1:-1]
+                if klucz and not os.environ.get(klucz):
+                    os.environ[klucz] = wartosc
+    except Exception as e:
+        print(f"Nie udalo sie wczytac pliku .env ({e})")
+
+
+# Kolejnosc ma znaczenie - pierwsza znaleziona wartosc wygrywa. Wariant w
+# ./data/ jest po to, zeby przy gotowym obrazie z ghcr.io (gdzie kodu sie nie
+# buduje) mozna bylo podlozyc .env przez zamontowany wolumen.
+for _kandydat_env in (
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", ".env"),
+    os.path.join(os.path.dirname(os.environ.get("CREDENTIALS_FILE", "") or "."), ".env"),
+):
+    _wczytaj_plik_env(_kandydat_env)
+
 app = Flask(__name__)
 # KLUCZOWE DLA LOGOWANIA:
 app.secret_key = 'bardzo_tajny_klucz_sesji_zmien_mnie_na_losowy_ciag'
@@ -763,6 +801,10 @@ def jez_gist_config():
     cfg = dict(jeziorowskie.wczytaj_gist_config())
     tok = cfg.pop("token", "")
     cfg["has_token"] = bool(tok)
+    # Podpowiedz diagnostyczna: pozwala sprawdzic, czy token w ogole dotarl do
+    # kontenera i czy nie jest obciety, nie ujawniajac przy tym jego tresci.
+    cfg["token_length"] = len(tok)
+    cfg["token_prefix"] = tok[:4] if tok else ""
     return jsonify(cfg)
 
 @app.route('/api/jeziorowskie/publish-gist', methods=['POST'])

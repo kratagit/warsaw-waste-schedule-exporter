@@ -659,6 +659,19 @@ def _plik_gist_config() -> str:
     return os.path.join(DATA_DIR, "gist_config.json")
 
 
+def _oczysc_token(wartosc: str) -> str:
+    """Sprowadza token do czystej postaci - bez spacji i cudzyslowow.
+
+    Cudzyslowy zdejmujemy, bo Docker Compose przekazuje wartosc z pliku .env
+    doslownie: GITHUB_GIST_TOKEN="ghp_..." dotarloby tu razem z apostrofami
+    i GitHub odrzucilby je jako bledne dane logowania.
+    """
+    wartosc = (wartosc or "").strip()
+    while len(wartosc) >= 2 and wartosc[0] == wartosc[-1] and wartosc[0] in "\"'":
+        wartosc = wartosc[1:-1].strip()
+    return wartosc
+
+
 def wczytaj_gist_config() -> dict:
     """Wczytuje konfigurację publikacji do GitHub Gist."""
     cfg = {"token": "", "token_source": "none", "gist_id": "", "raw_url": "", "last_updated": ""}
@@ -676,7 +689,8 @@ def wczytaj_gist_config() -> dict:
             pass
 
     # Priorytet ma zmienna środowiskowa (.env / system)
-    env_token = (os.environ.get("GITHUB_GIST_TOKEN") or os.environ.get("GITHUB_TOKEN") or "").strip()
+    env_token = (os.environ.get("GITHUB_GIST_TOKEN") or os.environ.get("GITHUB_TOKEN") or "")
+    env_token = _oczysc_token(env_token)
     if env_token:
         cfg["token"] = env_token
         cfg["token_source"] = "env"
@@ -731,7 +745,7 @@ def publikuj_do_gist(token: str | None = None, dozwolone: list[str] | None = Non
     Zwraca słownik ze statusem, stałym adresem raw_url i identyfikatorem Gista.
     """
     cfg = wczytaj_gist_config()
-    tok = (token or "").strip() or cfg.get("token", "").strip()
+    tok = _oczysc_token(token) or _oczysc_token(cfg.get("token", ""))
     if not tok:
         raise Exception("Wprowadź GitHub Personal Access Token (z uprawnieniem 'gist').")
 
